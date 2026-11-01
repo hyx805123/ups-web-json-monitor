@@ -1,0 +1,2245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPS 监控台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111820'/%3E%3Cpath d='M17 4 8 18h6l-1 10 9-14h-6z' fill='%232fbf71'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0a0e13; --panel:#111820; --panel2:#0e141b; --line:#1d2732; --line2:#26323f;
+    --text:#e6edf3; --muted:#78899a; --dim:#4d5b69;
+    --ok:#2fbf71; --warn:#e8a33d; --crit:#e2564d; --info:#4ea8de; --accent:#4ea8de;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 20% -10%,#12202c 0%,transparent 60%),var(--bg);
+    color:var(--text);
+    font:14px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{font-variant-numeric:tabular-nums}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit}
+
+  /* ---------- 顶栏 ---------- */
+  .top{
+    display:flex;align-items:center;gap:14px;padding:0 20px;height:56px;
+    border-bottom:1px solid var(--line);background:rgba(12,17,23,.9);
+    position:sticky;top:0;z-index:30;backdrop-filter:blur(8px);
+  }
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600;letter-spacing:.3px;flex:none}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
+  .brand small{color:var(--muted);font-weight:400;font-size:11.5px}
+  .tabs{display:flex;gap:2px;margin-left:14px;flex:1;overflow:auto}
+  .tab{
+    padding:7px 14px;border-radius:8px;font-size:13px;color:var(--muted);
+    border:1px solid transparent;background:none;white-space:nowrap;transition:.15s
+  }
+  .tab:hover{color:var(--text);background:#141c25}
+  .tab.on{color:#d7ecfb;background:#173349;border-color:#215a80}
+  .right{display:flex;align-items:center;gap:8px;flex:none}
+  .kpis{display:flex;gap:8px}
+  .kpi{
+    display:flex;align-items:baseline;gap:5px;padding:4px 11px;border:1px solid var(--line2);
+    border-radius:999px;background:var(--panel2);font-size:11.5px;color:var(--muted)
+  }
+  .kpi b{font-size:14px;color:var(--text);font-variant-numeric:tabular-nums}
+  .kpi.ok b{color:var(--ok)} .kpi.warn b{color:var(--warn)} .kpi.crit b{color:var(--crit)}
+  .btn{
+    padding:6px 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);
+    color:var(--text);font-size:12.5px;transition:.15s;white-space:nowrap
+  }
+  .btn:hover{background:#1a2430;border-color:#31414f}
+  .btn.primary{background:#17405c;border-color:#215a80;color:#d7ecfb}
+  .btn.primary:hover{background:#1b4d6e}
+  .btn.danger{color:#f0a7a2;border-color:rgba(226,86,77,.4)}
+  .btn.danger:hover{background:rgba(226,86,77,.12)}
+  .btn.sm{padding:3px 8px;font-size:11.5px;border-radius:5px}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+
+  /* ---------- 布局 ---------- */
+  .wrap{padding:18px 20px 46px;max-width:1780px;margin:0 auto}
+  .view{display:none}
+  .view.on{display:block}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:15px}
+  .gsec{margin-bottom:22px}
+  .ghead{display:flex;align-items:center;gap:9px;margin:0 0 11px}
+  .gchip{width:9px;height:9px;border-radius:3px;flex:none}
+  .gname{font-size:14.5px;font-weight:600}
+  .gcount{font-size:12px;color:var(--muted)}
+  .gline{flex:1;height:1px;background:var(--line)}
+  /* ---------- 视图切换 ---------- */
+  .viewtabs{display:flex;gap:2px;padding:2px;border:1px solid var(--line2);border-radius:8px;background:#0d1319}
+  .vt{padding:4px 11px;border-radius:6px;font-size:12px;color:var(--muted);background:none;border:0;transition:.15s;white-space:nowrap}
+  .vt:hover{color:var(--text)}
+  .vt.on{background:#173349;color:#d7ecfb}
+  /* ---------- 磁贴总览 ---------- */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(164px,1fr));gap:9px}
+  .tile{
+    background:linear-gradient(180deg,#111923,#0e141b);border:1px solid var(--line);border-radius:9px;
+    padding:9px 10px 10px;position:relative;overflow:hidden;cursor:pointer;transition:.16s;
+    min-height:112px;display:flex;flex-direction:column
+  }
+  .tile .terr{font-size:10px;color:var(--dim);margin-top:auto;padding-left:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .tload{margin-top:auto}
+  /* ---------- 拖放排序 ---------- */
+  .tile[draggable=true]{cursor:grab}
+  .card[draggable=true]{cursor:grab}
+  .tile,.card{user-select:none;-webkit-user-select:none}
+  .tile.dragging{opacity:.3;cursor:grabbing}
+  .tile.drop-before{box-shadow:inset 4px 0 0 0 var(--info)}
+  .tile.drop-after{box-shadow:inset -4px 0 0 0 var(--info)}
+  .gpanel.drop-target{outline:1px dashed var(--info);outline-offset:-1px}
+  .drag-hint{font-size:11.5px;color:var(--dim)}
+  .drag-ghost{
+    position:fixed;z-index:200;pointer-events:none;opacity:.92;
+    transform:scale(1.04) rotate(-1deg);box-shadow:0 12px 32px rgba(0,0,0,.6);
+    border-radius:9px;overflow:hidden
+  }
+  body.dragging-active{cursor:grabbing}
+  .tile:hover{border-color:#2d3d4d;transform:translateY(-1px)}
+  .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
+  .tile.ok::before{background:var(--ok)} .tile.warn::before{background:var(--warn)}
+  .tile.crit::before{background:var(--crit)} .tile.off::before{background:#3a4653}
+  .tile .tn{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:7px}
+  .tile .tst{font-size:10.5px;color:var(--muted);margin:1px 0 7px;padding-left:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .tbig{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05;padding-left:7px;letter-spacing:-.3px}
+  .tile .tbig small{font-size:11px;font-weight:400;color:var(--muted);margin-left:2px}
+  .tile .tbig.ok{color:var(--ok)} .tile .tbig.warn{color:var(--warn)} .tile .tbig.crit{color:var(--crit)}
+  .tile .tbig.off{color:var(--muted)}
+  .tile .tsub{display:flex;gap:9px;margin-top:7px;padding-left:7px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex-wrap:wrap}
+  .tile .tsub b{color:#c3d0dc;font-weight:600}
+  .tile .tsub .c{color:var(--warn)} .tile .tsub .r{color:var(--crit)}
+  .tile .tload{height:3px;background:#1a222c;border-radius:2px;margin-top:8px;overflow:hidden}
+  .tile .tload i{display:block;height:100%;border-radius:2px}
+  /* ---------- 分组折叠 ---------- */
+  .gpanel{border:1px solid var(--line);border-radius:10px;margin-bottom:11px;overflow:hidden;background:var(--panel)}
+  .gpanel .gh{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#0e141b;cursor:pointer;user-select:none}
+  .gpanel .gh:hover{background:#121a22}
+  .gpanel .gb{padding:12px;display:none;border-top:1px solid var(--line)}
+  .gpanel.open .gb{display:block}
+  .gpanel .garrow{color:var(--muted);font-size:11px;transition:.18s;width:10px}
+  .gpanel.open .garrow{transform:rotate(90deg)}
+  .gsum{display:flex;gap:12px;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .gsum b{color:#c3d0dc;font-weight:600}
+
+  /* ---------- 设备卡 ---------- */
+  .card{
+    background:linear-gradient(180deg,#121a23 0%,#0f151d 100%);
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:15px 15px 11px;position:relative;overflow:hidden;cursor:pointer;transition:.18s
+  }
+  .card:hover{border-color:#2d3d4d;transform:translateY(-1px)}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
+  .card.ok::before{background:var(--ok)}
+  .card.warn::before{background:var(--warn)}
+  .card.crit::before{background:var(--crit)}
+  .card.off::before{background:#3a4653}
+  .chead{display:flex;align-items:flex-start;gap:10px;margin-bottom:13px}
+  .cname{font-size:15px;font-weight:600;line-height:1.3}
+  .caddr{font-size:11.5px;color:var(--muted);margin-top:2px;font-family:ui-monospace,Consolas,monospace}
+  .cmeta{font-size:11.5px;color:var(--dim);margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
+  .cmeta span{background:#131b24;border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+  .badge{
+    margin-left:auto;flex:none;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;
+    border:1px solid transparent;white-space:nowrap
+  }
+  .badge.ok{color:#7ee2a8;background:rgba(47,191,113,.12);border-color:rgba(47,191,113,.35)}
+  .badge.warn{color:#f0c27a;background:rgba(232,163,61,.12);border-color:rgba(232,163,61,.35)}
+  .badge.crit{color:#f39b95;background:rgba(226,86,77,.13);border-color:rgba(226,86,77,.38)}
+  .badge.off{color:#94a3b1;background:rgba(120,137,154,.1);border-color:rgba(120,137,154,.28)}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px 8px;margin-bottom:11px}
+  .m{min-width:0}
+  .m .k{font-size:11px;color:var(--muted);letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m .v{font-size:19px;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .m .v span{font-size:11px;color:var(--muted);font-weight:400;margin-left:2px}
+  .m .v.na{font-size:12px;color:var(--dim);font-weight:400}
+  .spark{height:30px;margin:0 0 8px;display:block;width:100%}
+  /* ---------- 带标签的可交互趋势线 ---------- */
+  .sparkw{position:relative;margin:0 0 11px}
+  .sw-head{display:flex;align-items:baseline;gap:6px;font-size:11.5px;color:var(--muted);margin-bottom:1px}
+  .sw-dot{width:8px;height:8px;border-radius:2px;flex:none;align-self:center}
+  .sw-label{letter-spacing:.3px}
+  .sw-now{margin-left:auto;font-size:13.5px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+  .sw-now .u{font-size:10.5px;color:var(--muted);font-weight:400;margin-left:2px}
+  .sw-now.warn{color:var(--warn)} .sw-now.crit{color:var(--crit)}
+  .sw-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:1px;font-variant-numeric:tabular-nums}
+  .sparkw .spark{height:34px;margin:0}
+  .sparktip{
+    position:absolute;pointer-events:none;z-index:6;background:rgba(16,23,31,.97);
+    border:1px solid var(--line2);border-radius:6px;padding:4px 9px;font-size:11.5px;
+    display:none;white-space:nowrap;font-variant-numeric:tabular-nums;box-shadow:0 6px 18px rgba(0,0,0,.5)
+  }
+  .sparktip .st{color:var(--muted);font-size:10.5px;margin-right:7px;font-family:ui-monospace,Consolas,monospace}
+  .sparktip .sv{font-weight:600}
+  .m .v.crit{color:var(--crit)} .m .v.warn{color:var(--warn)}
+  .kv .row .v.crit{color:var(--crit)} .kv .row .v.warn{color:var(--warn)}
+  .issues{display:flex;flex-direction:column;gap:3px;margin-bottom:7px}
+  .issue{font-size:12px;color:#f0c27a;display:flex;gap:6px;align-items:flex-start}
+  .issue.crit{color:#f39b95}
+  .issue::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;margin-top:6px;flex:none}
+  .cfoot{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:8px}
+  .cfoot .mini{margin-left:auto}
+
+  /* ---------- 事件流 ---------- */
+  .section-title{display:flex;align-items:center;gap:10px;margin:26px 0 11px;font-size:12.5px;color:var(--muted);letter-spacing:.4px}
+  .section-title::after{content:"";flex:1;height:1px;background:var(--line)}
+  .events{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .ev{display:flex;gap:11px;padding:8px 14px;font-size:12.5px;border-bottom:1px solid #151d26}
+  .ev:last-child{border-bottom:0}
+  .ev .t{color:var(--dim);font-variant-numeric:tabular-nums;flex:none;font-family:ui-monospace,Consolas,monospace}
+  .ev .lv{flex:none;width:6px;height:6px;border-radius:50%;margin-top:7px}
+  .ev.ok .lv{background:var(--ok)} .ev.warn .lv{background:var(--warn)}
+  .ev.crit .lv{background:var(--crit)} .ev.info .lv{background:var(--info)}
+  .ev .msg{color:#c3d0dc}
+  .empty{padding:26px;text-align:center;color:var(--dim);font-size:13px}
+
+  /* ---------- 表格 ---------- */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .pthead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);background:#0e141b}
+  .pthead h3{font-size:13.5px;font-weight:600}
+  .pthead .sp{margin-left:auto}
+  .tscroll{overflow:auto;max-height:calc(100vh - 250px)}
+  table.dt{width:100%;border-collapse:collapse;font-size:13px}
+  table.dt th{
+    position:sticky;top:0;z-index:2;background:#0e141b;text-align:left;font-weight:500;font-size:11.5px;
+    color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap
+  }
+  table.dt td{padding:9px 12px;border-bottom:1px solid #151d26;vertical-align:middle}
+  table.dt.compact td{padding:4.5px 11px}
+  table.dt.compact td .sub{display:none}
+  table.dt tr:hover td{background:#111820}
+  table.dt td.num{font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11.5px;border:1px solid var(--line2);color:#a9bac9;background:#0d131a;white-space:nowrap;margin:1px 2px 1px 0}
+  .pill.on{color:#8fd9b0;border-color:rgba(47,191,113,.32)}
+  .pill.off{color:var(--dim);border-style:dashed}
+  .pill.g{color:#8fd9b0;border-color:rgba(47,191,113,.32)}
+  .pill.y{color:#f0c27a;border-color:rgba(232,163,61,.32)}
+  .pill.r{color:#f39b95;border-color:rgba(226,86,77,.35)}
+  .rowacts{display:flex;gap:6px;justify-content:flex-end}
+  .toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:13px}
+  .toolbar input[type=text],.toolbar select{
+    padding:6px 10px;border-radius:7px;border:1px solid var(--line2);background:#0b1016;color:var(--text);font-size:12.5px;outline:none
+  }
+  .toolbar input[type=text]{min-width:220px}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer;
+    padding:5px 11px;border:1px solid var(--line2);border-radius:7px;background:#0d131a}
+  .chk:hover{color:var(--text);border-color:#31414f}
+  .chk input{accent-color:#4ea8de;width:13px;height:13px;margin:0}
+
+  /* ---------- 弹层 ---------- */
+  .mask{position:fixed;inset:0;background:rgba(4,7,10,.74);backdrop-filter:blur(3px);display:none;z-index:50;overflow:auto;padding:3vh 0}
+  .mask.on{display:block}
+  .sheet{
+    max-width:980px;margin:0 auto;background:#0f151d;border:1px solid var(--line2);
+    border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.6);overflow:hidden
+  }
+  .sheet.narrow{max-width:580px}
+  .shead{display:flex;align-items:center;gap:12px;padding:15px 20px;border-bottom:1px solid var(--line)}
+  .shead h2{font-size:15.5px;font-weight:600}
+  .shead .x{margin-left:auto;background:none;border:0;color:var(--muted);font-size:20px;line-height:1}
+  .shead .x:hover{color:var(--text)}
+  .sbody{padding:18px 20px 20px;max-height:78vh;overflow:auto}
+  .sfoot{padding:13px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:#0d1319}
+  label.f{display:block;margin-bottom:13px}
+  label.f .lbl{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+  label.f .lbl b{color:var(--crit);font-weight:400}
+  input.f,select.f,textarea.f{
+    width:100%;padding:8px 11px;border-radius:7px;border:1px solid var(--line2);
+    background:#0b1016;color:var(--text);font-size:13px;outline:none
+  }
+  textarea.f{resize:vertical;min-height:62px}
+  input.f:focus,select.f:focus,textarea.f:focus{border-color:#2f6f9a;box-shadow:0 0 0 3px rgba(78,168,222,.12)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px}
+  .hint{font-size:11.5px;color:var(--dim);margin-top:5px;line-height:1.55}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:7px;font-size:12px;
+    border:1px solid var(--line2);background:#0d131a;color:#a9bac9;cursor:pointer;user-select:none
+  }
+  .chip.on{color:#d7ecfb;background:#173349;border-color:#215a80}
+  .chip .ck{font-size:11px;opacity:.8}
+  .switch{position:relative;width:40px;height:22px;display:inline-block}
+  .switch input{opacity:0;width:0;height:0}
+  .switch i{position:absolute;inset:0;background:#25313d;border-radius:22px;transition:.18s;cursor:pointer}
+  .switch i::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#8fa3b4;border-radius:50%;transition:.18s}
+  .switch input:checked + i{background:#1d5a3d}
+  .switch input:checked + i::before{transform:translateX(18px);background:#5fd39b}
+  .testout{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--line2);background:#0b1016;display:none;line-height:1.6}
+  .testout.on{display:block}
+  .testout.ok{border-color:rgba(47,191,113,.35);color:#9fe0ba}
+  .testout.bad{border-color:rgba(226,86,77,.35);color:#f0a7a2}
+  .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:11px 18px}
+  .kv .row{border-bottom:1px solid #151d26;padding-bottom:8px}
+  .kv .row .k{font-size:11.5px;color:var(--muted)}
+  .kv .row .v{font-size:15px;font-variant-numeric:tabular-nums}
+  .kv .row .v.na{font-size:12px;color:var(--dim)}
+  .subt{font-size:12px;color:var(--muted);margin:20px 0 10px;letter-spacing:.4px;display:flex;align-items:center;gap:8px}
+  .subt::after{content:"";flex:1;height:1px;background:var(--line)}
+  table.ptable{width:100%;border-collapse:collapse;font-size:13px}
+  table.ptable th,table.ptable td{text-align:right;padding:7px 8px;border-bottom:1px solid #151d26;font-variant-numeric:tabular-nums}
+  table.ptable th{font-size:11.5px;color:var(--muted);font-weight:500}
+  table.ptable th:first-child,table.ptable td:first-child{text-align:left;color:var(--muted)}
+  .cond-row{display:grid;grid-template-columns:1.3fr .8fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center}
+  .cond-row select,.cond-row input{padding:6px 9px;border-radius:6px;border:1px solid var(--line2);background:#0b1016;color:var(--text);font-size:12.5px;outline:none}
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1a2431;border:1px solid var(--line2);color:var(--text);padding:10px 18px;
+    border-radius:9px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:80
+  }
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .note-box{background:#0d131a;border:1px solid var(--line);border-left:3px solid var(--info);border-radius:8px;padding:12px 15px;font-size:12.5px;color:#a9bac9;line-height:1.75}
+  .note-box b{color:var(--text)}
+  .note-box code{background:#131b24;border:1px solid var(--line);border-radius:4px;padding:1px 6px;font-size:11.5px}
+  /* ---------- 历史图表 ---------- */
+  .chartbar{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .rng{padding:3px 11px;border-radius:6px;font-size:12px;border:1px solid var(--line2);background:#0d131a;color:var(--muted)}
+  .rng.on{color:#d7ecfb;background:#173349;border-color:#215a80}
+  .chartwrap{position:relative;background:#0c1219;border:1px solid var(--line);border-radius:10px;padding:10px 8px 6px}
+  .chartwrap svg{display:block;width:100%;height:auto}
+  .c-tip{
+    position:absolute;pointer-events:none;z-index:5;background:rgba(16,23,31,.97);
+    border:1px solid var(--line2);border-radius:7px;padding:7px 10px;font-size:11.5px;line-height:1.7;
+    display:none;min-width:140px;box-shadow:0 8px 24px rgba(0,0,0,.5)
+  }
+  .c-tip .tt{color:var(--muted);margin-bottom:3px;font-family:ui-monospace,Consolas,monospace}
+  .c-tip .tr{display:flex;align-items:center;gap:7px;white-space:nowrap}
+  .c-tip .tc{width:8px;height:8px;border-radius:2px;flex:none}
+  .c-tip .tn{color:var(--muted)}
+  .c-tip .tv{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--text)}
+  .clegend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:8px;padding:0 4px}
+  .clegend i{width:9px;height:3px;border-radius:2px;display:inline-block;margin-right:5px;vertical-align:middle}
+  .hist-empty{padding:26px;text-align:center;color:var(--dim);font-size:12.5px}
+  @media(max-width:980px){ .kpis{display:none} }
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand"><span class="dot"></span>UPS 监控台 <small>Vertiv ITA2 · Web JSON</small></div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-view="dash">看板</button>
+    <button class="tab" data-view="devices">设备管理</button>
+    <button class="tab" data-view="groups">分组管理</button>
+    <button class="tab" data-view="templates">配置模板</button>
+    <button class="tab" data-view="alerts">告警管理</button>
+    <button class="tab" data-view="system">系统与权限</button>
+  </div>
+  <div class="right">
+    <div class="kpis">
+      <div class="kpi">设备 <b id="k-total">0</b></div>
+      <div class="kpi ok">在线 <b id="k-online">0</b></div>
+      <div class="kpi warn">告警 <b id="k-warn">0</b></div>
+      <div class="kpi crit">严重 <b id="k-crit">0</b></div>
+    </div>
+    <select id="groupBy"><option value="none">不分组</option></select>
+    <div class="viewtabs" id="viewTabs">
+      <button class="vt on" data-vm="tiles">磁贴总览</button>
+      <button class="vt" data-vm="cards">设备卡片</button>
+      <button class="vt" data-vm="list">列表</button>
+      <button class="vt" data-vm="groups">分组</button>
+    </div>
+    <button class="btn" id="btn-refresh">刷新</button>
+    <button class="btn primary" id="btn-add">+ 添加 UPS</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <section class="view on" id="v-dash">
+    <div class="toolbar" style="margin-bottom:12px">
+      <label class="chk"><input type="checkbox" id="onlyAlert"> 仅显示异常设备</label>
+      <label class="chk" id="compactWrap" style="display:none"><input type="checkbox" id="compactList"> 紧凑列表</label>
+      <span id="dashCount" style="font-size:12px;color:var(--muted)"></span>
+      <span class="drag-hint" style="margin-left:auto">↔ 拖动磁贴或卡片可调整顺序（自动保存）</span>
+    </div>
+    <div id="dashGroups"></div>
+    <div class="section-title">事件记录</div>
+    <div class="events" id="events"><div class="empty">暂无事件</div></div>
+  </section>
+
+  <section class="view" id="v-devices">
+    <div class="toolbar">
+      <input type="text" id="devSearch" placeholder="搜索名称 / IP / 场地 / 型号 / 服务商">
+      <select id="devFilterGroup"><option value="">全部分组</option></select>
+      <select id="devFilterStatus">
+        <option value="">全部状态</option>
+        <option value="online">在线</option>
+        <option value="degraded">异常</option>
+        <option value="offline">离线</option>
+        <option value="disabled">已暂停</option>
+      </select>
+      <span style="flex:1"></span>
+      <span id="devSelInfo" style="font-size:12px;color:var(--muted)"></span>
+      <select id="batchGroup"></select>
+      <button class="btn" id="btnBatchGroup">批量归组</button>
+      <button class="btn" id="btnBatchEnable">批量启用</button>
+      <button class="btn" id="btnBatchDisable">批量暂停</button>
+      <button class="btn danger" id="btnBatchDelete">批量删除</button>
+    </div>
+    <div class="panel"><div class="tscroll">
+      <table class="dt" id="devTable">
+        <thead><tr>
+          <th style="width:32px"><input type="checkbox" id="devCheckAll"></th>
+          <th>名称</th><th>IP</th><th>所在场地</th><th>型号</th><th>上线日期</th>
+          <th>服务商</th><th>分组</th><th>状态</th><th>供电</th><th>负载</th><th>电池</th>
+          <th style="text-align:right">操作</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div></div>
+  </section>
+
+  <section class="view" id="v-groups">
+    <div class="note-box" style="margin-bottom:14px">
+      <b>分组的三种方式：</b>「型号」「场地」「状态」是<b>动态分组</b>——按设备字段或实时状态自动归类，无需手工维护；
+      「自定义」是<b>静态分组</b>，需要在设备管理里把设备勾选归入。看板顶部的下拉可切换分组视图。
+    </div>
+    <div class="panel">
+      <div class="pthead"><h3>分组列表</h3><span class="sp"></span>
+        <button class="btn primary sm" id="btnAddGroup">+ 新建分组</button></div>
+      <div class="tscroll">
+        <table class="dt" id="grpTable">
+          <thead><tr><th>名称</th><th>类型</th><th>匹配值</th><th>颜色</th><th>设备数</th><th>状态</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-templates">
+    <div class="note-box" style="margin-bottom:14px">
+      <b>模板</b>用于批量录入设备时预填公共参数（采集间隔、所在场地、服务商、账号等）。
+      新增设备时选择模板，公共字段自动带入，之后仍可逐台微调。
+    </div>
+    <div class="panel">
+      <div class="pthead"><h3>配置模板</h3><span class="sp"></span>
+        <button class="btn primary sm" id="btnAddTemplate">+ 新建模板</button></div>
+      <div class="tscroll">
+        <table class="dt" id="tplTable">
+          <thead><tr><th>模板名</th><th>适用厂商</th><th>默认参数</th><th>说明</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-alerts">
+    <div class="note-box" style="margin-bottom:14px">
+      告警规则命中后立即推送到<b>通知渠道</b>；规则未指定渠道时默认推送到全部已启用渠道。
+      渠道支持 <b>企业微信群机器人</b>（webhook）与 <b>邮件</b>（SMTP，支持 25/587 STARTTLS 与 465 隐式 TLS）。
+    </div>
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3>指标阈值（超限自动变色）</h3><span class="sp"></span>
+        <button class="btn sm" id="btnResetTh">恢复默认</button>
+        <button class="btn primary sm" id="btnSaveTh">保存阈值</button></div>
+      <div class="tscroll">
+        <table class="dt" id="thTable">
+          <thead><tr><th>指标</th><th>绿 → 黄</th><th>黄 → 红</th><th>依据</th><th>启用</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3>通知渠道</h3><span class="sp"></span>
+        <button class="btn primary sm" id="btnAddChannel">+ 新建渠道</button></div>
+      <div class="tscroll">
+        <table class="dt" id="chTable">
+          <thead><tr><th>名称</th><th>类型</th><th>配置</th><th>状态</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="pthead"><h3>告警规则</h3><span class="sp"></span>
+        <button class="btn primary sm" id="btnAddRule">+ 新建规则</button></div>
+      <div class="tscroll">
+        <table class="dt" id="ruleTable">
+          <thead><tr><th>规则名</th><th>级别</th><th>触发条件</th><th>通知渠道</th><th>冷却</th><th>重复</th><th>恢复通知</th><th>状态</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="pthead"><h3>最近投递记录</h3></div>
+      <div class="tscroll" style="max-height:320px">
+        <table class="dt" id="ahTable">
+          <thead><tr><th>时间</th><th>规则</th><th>设备</th><th>类型</th><th>结果</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="v-system">
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3>系统信息</h3></div>
+      <div class="sbody">
+        <div class="kv">
+          <div class="row"><div class="k">服务端口</div><div class="v">8686</div></div>
+          <div class="row"><div class="k">采集方式</div><div class="v">UPS 内建 Web JSON</div></div>
+          <div class="row"><div class="k">设备总数</div><div class="v" id="sysDevices">0</div></div>
+          <div class="row"><div class="k">分组数</div><div class="v" id="sysGroups">0</div></div>
+          <div class="row"><div class="k">规则数</div><div class="v" id="sysRules">0</div></div>
+          <div class="row"><div class="k">通知渠道</div><div class="v" id="sysChannels">0</div></div>
+          <div class="row"><div class="k">身份认证</div><div class="v na" id="sysAuth">未启用（见设计文档）</div></div>
+          <div class="row"><div class="k">服务器时间</div><div class="v" id="sysTime">—</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="pthead"><h3>身份认证与权限管理</h3></div>
+      <div class="sbody">
+        <div class="note-box">
+          <b>当前状态：未启用。</b>本系统部署在内网，看板与 API 暂不鉴权。<br>
+          已完成的<b>预留设计</b>见 <code>docs/AUTH-DESIGN.md</code>，要点：<br>
+          1. 账号体系：本地账号 + 预留 AD/LDAP、CAS 对接<br>
+          2. 角色模型：超级管理员 / 运维工程师 / 只读观察者 / 审计员<br>
+          3. 权限矩阵：按「看板只读、配置可写、告警可配、设备可增删改、凭据不可见」五类操作切分<br>
+          4. 会话与审计：HttpOnly Session、登录审计、操作留痕、密码策略<br>
+          5. 凭据保护：设备密码、企微 webhook、SMTP 口令分角色可见，API 永不回传明文<br>
+          <br>如需现在就上，可按最小可用版实现：<b>单管理员账号 + 登录页 + 会话 Cookie + 全部写操作鉴权</b>。
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="mask" id="mask">
+  <div class="sheet" id="sheet">
+    <div class="shead"><h2 id="sheetTitle"></h2><button class="x" id="sheetX">×</button></div>
+    <div class="sbody" id="sheetBody"></div>
+    <div class="sfoot" id="sheetFoot"></div>
+  </div>
+</div>
+
+<div class="mask" id="mask-detail">
+  <div class="sheet">
+    <div class="shead"><h2 id="d-title">设备详情</h2><button class="x" data-close="mask-detail">×</button></div>
+    <div class="sbody" id="d-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let STATE = { devices: [], events: [], groups: [], groupOptions: [], grouped: [], ui: {}, alertHistory: [] };
+let SETTINGS = { groups: [], templates: [], channels: [], rules: [], ui: {}, auth: {} };
+let VIEW = 'dash';
+let detailId = null;
+let editingId = null;
+const devSelected = new Set();
+let loopTimer = null;
+
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("on"), 2400);
+}
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function fmt(v,d){
+  if(v===null||v===undefined||v==="") return null;
+  const n=Number(v); if(!Number.isFinite(n)) return null;
+  return n.toFixed(d===undefined?1:d);
+}
+function clock(ts){
+  const d=new Date(ts), p=x=>String(x).padStart(2,"0");
+  return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
+}
+function dt(ts){
+  const d=new Date(ts), p=x=>String(x).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
+}
+function ago(ts){
+  if(!ts) return "—";
+  const s=Math.floor((Date.now()-ts)/1000);
+  if(s<5) return "刚刚";
+  if(s<60) return s+" 秒前";
+  if(s<3600) return Math.floor(s/60)+" 分钟前";
+  if(s<86400) return Math.floor(s/3600)+" 小时前";
+  return Math.floor(s/86400)+" 天前";
+}
+async function api(url, opt){
+  const r = await fetch(url, Object.assign({headers:{"Content-Type":"application/json"}}, opt||{}));
+  let j=null; try{ j=await r.json(); }catch(_){}
+  if(!r.ok) throw new Error((j&&j.error)||("HTTP "+r.status));
+  return j;
+}
+
+/* ---------------- 通用表单弹层 ---------------- */
+function openSheet(opts){
+  $("sheet").className = "sheet" + (opts.narrow?" narrow":"");
+  $("sheetTitle").textContent = opts.title;
+  $("sheetBody").innerHTML = opts.html || "";
+  $("sheetFoot").innerHTML = "";
+  const cancel = document.createElement("button");
+  cancel.className = "btn"; cancel.textContent = "取消";
+  cancel.onclick = closeSheet;
+  $("sheetFoot").appendChild(cancel);
+  if (opts.submitText !== null) {
+    const ok = document.createElement("button");
+    ok.className = "btn primary"; ok.textContent = opts.submitText || "保存";
+    ok.onclick = async ()=>{
+      ok.disabled = true;
+      try { await opts.onSubmit(); } catch(e){ toast(e.message); }
+      ok.disabled = false;
+    };
+    $("sheetFoot").appendChild(ok);
+  }
+  $("mask").classList.add("on");
+  if (opts.onReady) opts.onReady($("sheetBody"));
+  const first = $("sheetBody").querySelector("input,select,textarea");
+  if(first) setTimeout(()=>first.focus(),60);
+}
+function closeSheet(){ $("mask").classList.remove("on"); }
+$("sheetX").onclick = closeSheet;
+$("mask").addEventListener("click", e=>{ if(e.target===$("mask")) closeSheet(); });
+
+function fieldHtml(f, val){
+  const v = val===undefined||val===null?"":val;
+  let inner="";
+  if(f.type==="select"){
+    inner = '<select class="f" id="fld_'+f.key+'">' + (f.options||[]).map(o=>
+      '<option value="'+esc(o.value)+'"'+(String(o.value)===String(v)?" selected":"")+'>'+esc(o.label)+'</option>').join("") + '</select>';
+  } else if(f.type==="textarea"){
+    inner = '<textarea class="f" id="fld_'+f.key+'" placeholder="'+esc(f.placeholder||"")+'">'+esc(v)+'</textarea>';
+  } else if(f.type==="switch"){
+    inner = '<label class="switch"><input type="checkbox" id="fld_'+f.key+'"'+(v?" checked":"")+'><i></i></label>';
+  } else if(f.type==="multi"){
+    const arr = Array.isArray(v)?v:[];
+    inner = '<div class="chips" id="fld_'+f.key+'">' + (f.options||[]).map(o=>
+      '<span class="chip'+(arr.indexOf(o.value)>=0?" on":"")+'" data-v="'+esc(o.value)+'">'+
+      esc(o.label)+'<span class="ck">'+(arr.indexOf(o.value)>=0?"✓":"")+'</span></span>').join("") + '</div>';
+  } else {
+    inner = '<input class="f" id="fld_'+f.key+'" type="'+(f.type||"text")+'" value="'+esc(v)+'" placeholder="'+esc(f.placeholder||"")+'">';
+  }
+  return '<label class="f"><span class="lbl">'+esc(f.label)+(f.required?' <b>*</b>':'')+'</span>'+inner+
+    (f.hint?'<div class="hint">'+f.hint+'</div>':'')+'</label>';
+}
+function buildForm(fields, values){
+  let html="";
+  const rows=[];
+  for(const f of fields){
+    if(f.type==="row"){ rows.push(f.keys.map(k=>f.fields.find(x=>x.key===k))); continue; }
+    rows.push([f]);
+  }
+  for(const r of rows){
+    if(r.length===1) html += fieldHtml(r[0], values[r[0].key]);
+    else {
+      html += '<div class="'+(r.length===3?"row3":"row2")+'">';
+      for(const f of r) html += fieldHtml(f, values[f.key]);
+      html += '</div>';
+    }
+  }
+  return html;
+}
+function collectOne(f,out){
+  if(!f) return;
+  const el = $("fld_"+f.key);
+  if(!el) return;
+  if(f.type==="switch") out[f.key]=el.checked;
+  else if(f.type==="multi") out[f.key]=Array.from(el.querySelectorAll(".chip.on")).map(c=>c.dataset.v);
+  else out[f.key]=el.value;
+}
+function collectForm(fields, values){
+  const out = Object.assign({}, values);
+  for(const f of fields){
+    if(f.type==="row"){ for(const k of f.keys) collectOne(f.fields.find(x=>x.key===k),out); continue; }
+    collectOne(f,out);
+  }
+  return out;
+}
+function bindChips(root){
+  root.querySelectorAll(".chip").forEach(c=>{
+    c.onclick=()=>{ c.classList.toggle("on"); const ck=c.querySelector(".ck"); if(ck) ck.textContent=c.classList.contains("on")?"✓":""; };
+  });
+}
+
+/* ---------------- 看板 ---------------- */
+function sparkline(points, color, h){
+  const W=320, H=h||30;
+  const vals=points.filter(v=>v!==null&&v!==undefined);
+  if(vals.length<2) return '<svg class="spark" viewBox="0 0 '+W+' '+H+'"></svg>';
+  let min=Math.min(...vals), max=Math.max(...vals);
+  if(max-min<0.001) max=min+1;
+  const pad=(max-min)*0.12; min-=pad; max+=pad;
+  const stepX=W/(points.length-1);
+  let d="",started=false; const area=[];
+  points.forEach((v,i)=>{
+    if(v===null||v===undefined) return;
+    const x=i*stepX, y=H-((v-min)/(max-min))*(H-4)-2;
+    d+=(started?"L":"M")+x.toFixed(1)+" "+y.toFixed(1)+" ";
+    area.push([x,y]); started=true;
+  });
+  let ap="";
+  if(area.length>1) ap="M"+area[0][0]+" "+H+" "+area.map(p=>"L"+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ")+" L"+area[area.length-1][0].toFixed(1)+" "+H+" Z";
+  const gid="g"+Math.random().toString(36).slice(2,8);
+  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+    '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
+    '<stop offset="0%" stop-color="'+color+'" stop-opacity="0.28"/><stop offset="100%" stop-color="'+color+'" stop-opacity="0"/></linearGradient></defs>'+
+    (ap?'<path d="'+ap+'" fill="url(#'+gid+')"/>':"")+
+    '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+}
+function cardClass(d){
+  if(d.status==="offline"||d.status==="degraded"||!d.snap) return "off";
+  return d.snap.severity.level;
+}
+function badgeOf(d){
+  if(d.status==="disabled") return {c:"off",t:"已暂停"};
+  if(d.status==="starting") return {c:"off",t:"连接中"};
+  if(d.status!=="online") return {c:"off",t:"离线"};
+  return {c:d.snap.severity.level, t:d.snap.supply.text};
+}
+function metric(k,v,unit,naText,level){
+  if(v===null||v===undefined) return '<div class="m"><div class="k">'+k+'</div><div class="v na">'+(naText||"设备不支持")+'</div></div>';
+  const cls = level==="crit"?" crit":(level==="warn"?" warn":"");
+  return '<div class="m"><div class="k">'+k+'</div><div class="v'+cls+'">'+v+(unit?'<span>'+unit+'</span>':'')+'</div></div>';
+}
+
+// 指标配色：绿(正常) / 黄(注意) / 红(告警)
+const LEVEL_COLOR = { ok:"#4ea8de", warn:"#e8a33d", crit:"#e2564d" };
+function levelColor(lv, base){ return LEVEL_COLOR[lv] || base || "#4ea8de"; }
+
+// 趋势线数据缓存，供悬浮交互查点
+const SPARK_POINTS = {};
+
+// 带标签 / 单位 / 当前值 / 极值 / 悬浮读数的趋势线
+function sparkWidget(key, label, unit, points, color, digits){
+  const W=320, H=34;
+  const vals = points.filter(v=>v!==null&&v!==undefined&&v!==''&&!Number.isNaN(Number(v))).map(Number);
+  SPARK_POINTS[key] = { points: points, unit: unit, digits: digits===undefined?1:digits };
+  let head='<div class="sw-head"><span class="sw-dot" style="background:'+color+'"></span>'+
+    '<span class="sw-label">'+esc(label)+'</span>'+
+    '<span class="sw-now" data-now="'+key+'">—</span></div>';
+  if(vals.length<2){
+    return '<div class="sparkw" data-sp="'+key+'">'+head+
+      '<svg class="spark" viewBox="0 0 '+W+' '+H+'"></svg>'+
+      '<div class="sw-axis"><span>数据不足</span><span></span></div><div class="sparktip"></div></div>';
+  }
+  let mn=Math.min(...vals), mx=Math.max(...vals);
+  if(mx-mn<0.0001){ mn-=1; mx+=1; }
+  const trueMn=mn, trueMx=mx;
+  const pad=(mx-mn)*0.14; mn-=pad; mx+=pad;
+  const stepX=W/(points.length-1);
+  let d="",started=false;
+  points.forEach((v,i)=>{
+    if(v===null||v===undefined||v==="") return;
+    const x=i*stepX, y=H-((Number(v)-mn)/(mx-mn))*(H-6)-3;
+    d+=(started?"L":"M")+x.toFixed(1)+" "+y.toFixed(1)+" ";
+    started=true;
+  });
+  const gid="g"+key+Math.random().toString(36).slice(2,7);
+  const svg='<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+    '<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1">'+
+    '<stop offset="0%" stop-color="'+color+'" stop-opacity="0.3"/>'+
+    '<stop offset="100%" stop-color="'+color+'" stop-opacity="0"/></linearGradient></defs>'+
+    '<path d="'+d+' L'+W+' '+H+' L0 '+H+' Z" fill="url(#'+gid+')"/>'+
+    '<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>'+
+    '<circle class="sparkmark" r="3" fill="'+color+'" stroke="#0f151d" stroke-width="1.5" style="display:none"/>'+
+    '</svg>';
+  return '<div class="sparkw" data-sp="'+key+'">'+head+svg+
+    '<div class="sw-axis"><span data-min="'+key+'">'+fmt(trueMn,digits===undefined?1:digits)+' '+unit+'</span>'+
+    '<span data-max="'+key+'">'+fmt(trueMx,digits===undefined?1:digits)+' '+unit+'</span></div>'+
+    '<div class="sparktip"></div></div>';
+}
+
+// 绑定趋势线悬浮交互
+function bindSparks(root){
+  root.querySelectorAll(".sparkw").forEach(w=>{
+    const key=w.dataset.sp;
+    const info=SPARK_POINTS[key];
+    if(!info) return;
+    const svg=w.querySelector("svg.spark");
+    const tip=w.querySelector(".sparktip");
+    const mark=w.querySelector(".sparkmark");
+    const nowEl=w.querySelector("[data-now]");
+    if(!svg) return;
+    const W=320;
+    function move(e){
+      const pts=info.points;
+      const valid=pts.map((v,i)=>[v,i]).filter(x=>x[0]!==null&&x[0]!==undefined&&x[0]!=="");
+      if(valid.length<2) return;
+      const r=svg.getBoundingClientRect();
+      const px=(e.clientX-r.left)*(W/r.width);
+      let best=null,bd=1e18;
+      for(const [v,i] of valid){
+        const x=valid.length>1? (pts.length>1? i/(pts.length-1)*W : 0) : 0;
+        const dd=Math.abs(x-px);
+        if(dd<bd){bd=dd;best=[v,i,x];}
+      }
+      if(!best) return;
+      const val=Number(best[0]);
+      const t=new Date(pts[best[1]].ts||Date.now());
+      const p=x=>String(x).padStart(2,"0");
+      tip.innerHTML='<span class="st">'+p(t.getHours())+':'+p(t.getMinutes())+':'+p(t.getSeconds())+'</span>'+
+        '<span class="sv">'+fmt(val,info.digits)+' '+info.unit+'</span>';
+      tip.style.display="block";
+      const wr=w.getBoundingClientRect();
+      const left=(best[2]/W)*r.width + (r.left-wr.left) - tip.offsetWidth/2;
+      tip.style.left=Math.max(0,Math.min(wr.width-tip.offsetWidth,left))+"px";
+      // 跟随鼠标上下浮动
+      const my=(e.clientY-wr.top)-30;
+      tip.style.top=Math.max(0,Math.min(wr.height-tip.offsetHeight-2,my))+"px";
+      if(mark){
+        mark.style.display="";
+        mark.setAttribute("cx",best[2]);
+        const vals=info.points.filter(v=>v!=null&&v!=="").map(Number);
+        let mn=Math.min(...vals), mx=Math.max(...vals);
+        if(mx-mn<0.0001){mn-=1;mx+=1;}
+        const pad=(mx-mn)*0.14; mn-=pad; mx+=pad;
+        const y=34-((val-mn)/(mx-mn))*(34-6)-3;
+        mark.setAttribute("cy",y.toFixed(1));
+      }
+    }
+    svg.addEventListener("mousemove",move);
+    svg.addEventListener("mouseleave",()=>{
+      tip.style.display="none";
+      if(mark) mark.style.display="none";
+    });
+    // 默认显示最新值
+    if(nowEl){
+      const pts=info.points;
+      for(let i=pts.length-1;i>=0;i--){
+        if(pts[i]!==null&&pts[i]!==undefined&&pts[i]!==""){
+          nowEl.innerHTML=fmt(Number(pts[i]),info.digits)+'<span class="u">'+info.unit+'</span>';
+          break;
+        }
+      }
+    }
+  });
+}
+function renderCard(d){
+  const s=d.snap, cl=cardClass(d), b=badgeOf(d);
+  let metrics="",spark="",issues="",footer="";
+  const meta=[];
+  if(d.cfg.site) meta.push(esc(d.cfg.site));
+  if(d.cfg.model) meta.push(esc(d.cfg.model));
+  if(d.cfg.integrator) meta.push(esc(d.cfg.integrator));
+  if(s){
+    const L=s.levels||{};
+    const lv=k=>(L[k]&&L[k].level)||"ok";
+    const load=s.load.pct?s.load.pct.a:null;
+    metrics=
+      metric("输入电压",fmt(s.input.v.a,1),"V",null,lv("inputVoltage"))+
+      metric("输出电压",fmt(s.output.v.a,1),"V",null,lv("outputVoltage"))+
+      metric("负载率",fmt(load,1),"%",null,lv("loadPercent"))+
+      metric("输出电流",fmt(s.output.i.a,2),"A",null,lv("outputCurrent"))+
+      metric("电池容量",fmt(s.battery.capPct,0),"%",null,lv("batteryCapacity"))+
+      metric("备电时间",fmt(s.battery.backupMin,0),"min");
+    const sp=d.spark||{};
+    spark=sparkWidget(d.cfg.id+"_out","输出电压","V",(sp.vOut||[]).slice(-120),levelColor(lv("outputVoltage"),"#4ea8de"),1)+
+          sparkWidget(d.cfg.id+"_load","负载率","%",(sp.loadPct||[]).slice(-120),levelColor(lv("loadPercent"),"#2fbf71"),1);
+    const list=s.severity.issues.slice(0,3);
+    if(list.length) issues='<div class="issues">'+list.map(i=>'<div class="issue '+i.lvl+'">'+esc(i.msg)+'</div>').join("")+'</div>';
+    const envTxt = (s.caps.envTemp&&s.env.tempC!==null)?('环境 '+fmt(s.env.tempC,1)+'℃'):'环境温度 设备不支持';
+    footer = envTxt+' · 电池 '+esc(s.battery.statePText)+(s.eco?' · ECO 开':'')+' · 告警 '+s.alarms.count+' / 故障 '+s.alarms.faults;
+  }else{
+    metrics=metric("输入电压",null)+metric("输出电压",null)+metric("负载率",null)+
+            metric("输出电流",null)+metric("电池容量",null)+metric("备电时间",null);
+    footer = d.error?esc(d.error):"正在建立会话…";
+  }
+  return '<div class="card '+cl+'" draggable="true" data-id="'+d.cfg.id+'">'+
+    '<div class="chead"><div style="min-width:0">'+
+      '<div class="cname">'+esc(d.cfg.name)+'</div>'+
+      '<div class="caddr">'+esc(d.cfg.host)+'</div>'+
+      (meta.length?'<div class="cmeta">'+meta.map(m=>'<span>'+m+'</span>').join("")+'</div>':'')+
+    '</div><div class="badge '+b.c+'">'+esc(b.t)+'</div></div>'+
+    '<div class="metrics">'+metrics+'</div>'+spark+issues+
+    '<div class="cfoot"><span>'+footer+'</span><span class="mini">'+(d.lastOkAt?ago(d.lastOkAt):"—")+'</span></div>'+
+  '</div>';
+}
+
+/* ---------------- 看板视图切换 ---------------- */
+let onlyAlert = false;
+let compactList = false;
+function visibleDevices(){
+  if(!onlyAlert) return STATE.devices;
+  return STATE.devices.filter(d=>{
+    if(d.status!=="online") return true;
+    if(d.snap && d.snap.severity.level!=="ok") return true;
+    return false;
+  });
+}
+function visibleGroups(){
+  const ids=new Set(visibleDevices().map(d=>d.cfg.id));
+  return (STATE.grouped||[]).map(g=>({group:g.group,deviceIds:g.deviceIds.filter(id=>ids.has(id))}))
+    .filter(g=>g.deviceIds.length);
+}
+
+/* ---------------- 磁贴总览（30+ 台首选） ---------------- */
+function renderTile(d){
+  const s=d.snap;
+  const cls=!s||d.status==="offline"||d.status==="degraded"?"off":s.severity.level;
+  const L=(s&&s.levels)||{};
+  const lv=k=>(L[k]&&L[k].level)||"ok";
+  const cl3=(k)=>lv(k)==="crit"?"r":lv(k)==="warn"?"c":"";
+  let big,sub,bar="";
+  if(s){
+    const load=s.load.pct?s.load.pct.a:null;
+    big='<div class="tbig '+cls+'">'+esc(s.supply.text)+'</div>';
+    sub='<div class="tsub">'+
+      '<span>负载 <b class="'+cl3("loadPercent")+'">'+fmt(load,0)+'%</b></span>'+
+      '<span>输出 <b class="'+cl3("outputVoltage")+'">'+fmt(s.output.v.a,0)+'V</b></span>'+
+      '<span>电池 <b class="'+cl3("batteryCapacity")+'">'+fmt(s.battery.capPct,0)+'%</b></span>'+
+      '</div>';
+    const lp=load===null?0:Math.max(0,Math.min(100,load));
+    const lc=lv("loadPercent")==="crit"?"#e2564d":lv("loadPercent")==="warn"?"#e8a33d":"#2fbf71";
+    bar='<div class="tload"><i style="width:'+lp+'%;background:'+lc+'"></i></div>';
+  }else{
+    big='<div class="tbig off">'+(d.status==="disabled"?"已暂停":(d.status==="starting"?"连接中":"离线"))+'</div>';
+    sub='<div class="tsub"><span>'+esc(d.cfg.host)+'</span></div>';
+    bar='<div class="terr">'+esc((d.error||"—").slice(0,26))+'</div>';
+  }
+  const sub2=d.cfg.site||d.cfg.model||d.cfg.host;
+  return '<div class="tile '+cls+'" draggable="true" data-id="'+d.cfg.id+'" title="'+esc(d.cfg.name+' · '+d.cfg.host+'\n拖动可调整顺序')+'">'+
+    '<div class="tn">'+esc(d.cfg.name)+'</div>'+
+    '<div class="tst">'+esc(sub2)+'</div>'+big+sub+bar+'</div>';
+}
+
+/* ---------------- 拖放排序 ---------------- */
+let DRAG=null;
+let lastMark=null;
+function clearDropMarks(){
+  if(lastMark){ lastMark.classList.remove("drop-before","drop-after"); lastMark=null; }
+  document.querySelectorAll(".drop-before,.drop-after").forEach(t=>{
+    t.classList.remove("drop-before","drop-after");
+  });
+  document.querySelectorAll(".gpanel.drop-target").forEach(t=>t.classList.remove("drop-target"));
+}
+// 计算拖放后的全局顺序（STATE.devices 已按 order 排好序）
+function computeNewOrder(dragId, targetTile, after){
+  const allIds=STATE.devices.map(d=>d.cfg.id);
+  const from=allIds.indexOf(dragId);
+  if(from<0) return null;
+  const container=targetTile.closest(".tiles,.grid");
+  if(!container) return null;
+  const sibs=Array.from(container.querySelectorAll(".tile[draggable=true],.card[draggable=true]"));
+  const ti=sibs.indexOf(targetTile);
+  if(ti<0) return null;
+  const anchor=after?sibs[ti+1]:sibs[ti];
+  let insertAt;
+  if(!anchor) insertAt=allIds.length;
+  else {
+    insertAt=allIds.indexOf(anchor.dataset.id);
+    if(insertAt<0) insertAt=allIds.length;
+  }
+  allIds.splice(from,1);
+  if(from<insertAt) insertAt--;
+  allIds.splice(insertAt,0,dragId);
+  return allIds;
+}
+async function saveOrder(ids, targetGroupId){
+  try{
+    await api("/api/devices/reorder",{method:"POST",body:JSON.stringify({ids:ids,targetGroupId:targetGroupId||null})});
+    listSort={key:"custom",dir:1};     // 切到默认序，列表视图里立刻能看到顺序变化
+    await refresh();
+    toast(targetGroupId?"已移动到该分组并更新顺序":"顺序已保存");
+  }catch(e){ toast(e.message); }
+}
+function bindDrag(root){
+  root.querySelectorAll(".tile[draggable=true],.card[draggable=true]").forEach(tile=>{
+    tile.addEventListener("dragstart", e=>{
+      DRAG={ id:tile.dataset.id, mode:"mouse" };
+      tile.classList.add("dragging");
+      document.body.classList.add("dragging-active");
+      try{ e.dataTransfer.setData("text/plain", tile.dataset.id); e.dataTransfer.effectAllowed="move"; }catch(_){}
+    });
+    tile.addEventListener("dragend", ()=>{
+      tile.classList.remove("dragging");
+      document.body.classList.remove("dragging-active");
+      DRAG=null;
+      clearDropMarks();
+      setTimeout(()=>{ refresh(); }, 120);   // 拖完补一次刷新
+    });
+    tile.addEventListener("dragover", e=>{
+      if(!DRAG || DRAG.id===tile.dataset.id) return;
+      e.preventDefault();
+      try{ e.dataTransfer.dropEffect="move"; }catch(_){}
+      clearDropMarks();
+      const r=tile.getBoundingClientRect();
+      const after=(e.clientX > r.left+r.width/2);
+      lastMark=tile;
+      tile.classList.add(after?"drop-after":"drop-before");
+    });
+    tile.addEventListener("drop", e=>{
+      if(!DRAG || DRAG.id===tile.dataset.id) return;
+      e.preventDefault(); e.stopPropagation();
+      const r=tile.getBoundingClientRect();
+      const after=(e.clientX > r.left+r.width/2);
+      const ids=computeNewOrder(DRAG.id, tile, after);
+      clearDropMarks();
+      if(ids) saveOrder(ids);
+    });
+  });
+  bindTouchDrag(root);
+}
+
+/* ---- 触摸设备：长按 260ms 激活拖动，用幽灵元素跟随手指 ---- */
+function bindTouchDrag(root){
+  root.querySelectorAll(".tile[draggable=true],.card[draggable=true]").forEach(el=>{
+    let timer=null, sx=0, sy=0, started=false, srcEl=null;
+    el.addEventListener("touchstart", e=>{
+      if(e.touches.length!==1) return;
+      const t=e.touches[0];
+      sx=t.clientX; sy=t.clientY; started=false;
+      timer=setTimeout(()=>{
+        started=true;
+        srcEl=el;
+        const ghost=el.cloneNode(true);
+        ghost.classList.add("drag-ghost");
+        ghost.classList.remove("dragging");
+        const r=el.getBoundingClientRect();
+        ghost.style.width=r.width+"px";
+        ghost.style.height=r.height+"px";
+        ghost.style.left=r.left+"px";
+        ghost.style.top=r.top+"px";
+        document.body.appendChild(ghost);
+        el.classList.add("dragging");
+        document.body.classList.add("dragging-active");
+        DRAG={ id:el.dataset.id, mode:"touch", ghost:ghost };
+        moveGhost(sx, sy);
+        if(navigator.vibrate) try{ navigator.vibrate(15); }catch(_){}
+      }, 260);
+    }, {passive:true});
+    el.addEventListener("touchmove", e=>{
+      const t=e.touches[0];
+      if(!started){
+        if(Math.abs(t.clientX-sx)>10 || Math.abs(t.clientY-sy)>10){ clearTimeout(timer); }
+        return;
+      }
+      e.preventDefault();
+      moveGhost(t.clientX, t.clientY);
+    }, {passive:false});
+    const finish=()=>{
+      clearTimeout(timer);
+      if(!started) return;
+      const target=document.querySelector(".tile.drop-before,.tile.drop-after");
+      const ids = target ? computeNewOrder(DRAG.id, target, target.classList.contains("drop-after")) : null;
+      if(DRAG.ghost) DRAG.ghost.remove();
+      if(srcEl) srcEl.classList.remove("dragging");
+      document.body.classList.remove("dragging-active");
+      DRAG=null;
+      clearDropMarks();
+      if(ids) saveOrder(ids);
+    };
+    el.addEventListener("touchend", finish);
+    el.addEventListener("touchcancel", finish);
+  });
+}
+function moveGhost(x, y){
+  if(!DRAG || !DRAG.ghost) return;
+  const g=DRAG.ghost;
+  g.style.left=(x-g.offsetWidth/2)+"px";
+  g.style.top=(y-g.offsetHeight/2)+"px";
+  clearDropMarks();
+  const el=document.elementFromPoint(x, y);
+  const tile=el?el.closest(".tile,.card"):null;
+  if(tile && tile.dataset.id!==DRAG.id){
+    const r=tile.getBoundingClientRect();
+    tile.classList.add((x>r.left+r.width/2)?"drop-after":"drop-before");
+  }
+  const panel=el?el.closest(".gpanel"):null;
+  if(panel && (panel.dataset.gtype==="custom"||panel.dataset.gtype==="unassigned")){
+    panel.classList.add("drop-target");
+  }
+}
+
+/* ---------------- 列表视图 ---------------- */
+let listSort={ key:"custom", dir:1 };
+/* 不依赖拖拽的顺序调整（兜底） */
+async function moveDevice(id, dir){
+  const ids=STATE.devices.map(d=>d.cfg.id);
+  const i=ids.indexOf(id);
+  const j=i+dir;
+  if(i<0||j<0||j>=ids.length){ toast(dir<0?"已经在最前":"已经在最后"); return; }
+  ids.splice(j,0,ids.splice(i,1)[0]);
+  try{
+    await api("/api/devices/reorder",{method:"POST",body:JSON.stringify({ids})});
+    listSort={key:"custom",dir:1};       // 切到默认序，立刻能看到变化
+    await refresh();
+    toast("顺序已更新");
+  }catch(e){ toast(e.message); }
+}
+function renderListView(){
+  const devs=visibleDevices().slice();
+  const g=(s,k)=>{ const v=(s&&s[k]); return v===null||v===undefined?"":v; };
+  const key=listSort.key, dir=listSort.dir;
+  devs.sort((a,b)=>{
+    let va,vb;
+    if(key==="custom") return 0;   // 自定义顺序 = 拖拽/上下移设定的顺序（STATE.devices 已按 order 排好）
+    if(key==="name"){ va=a.cfg.name||""; vb=b.cfg.name||""; return va.localeCompare(vb)*dir; }
+    if(key==="site"){ va=a.cfg.site||""; vb=b.cfg.site||""; return va.localeCompare(vb)*dir; }
+    if(key==="status"){ va=a.status; vb=b.status; return va.localeCompare(vb)*dir; }
+    if(key==="severity"){ va=a.snap?a.snap.severity.level:"offline"; vb=b.snap?b.snap.severity.level:"offline"; return va.localeCompare(vb)*dir; }
+    if(key==="load"){ va=g(a.snap&&a.snap.load.pct,"a"); vb=g(b.snap&&b.snap.load.pct,"a"); return (va-vb)*dir; }
+    if(key==="outV"){ va=g(a.snap&&a.snap.output.v,"a"); vb=g(b.snap&&b.snap.output.v,"a"); return (va-vb)*dir; }
+    if(key==="batt"){ va=g(a.snap&&a.snap.battery,"capPct"); vb=g(b.snap&&b.snap.battery,"capPct"); return (va-vb)*dir; }
+    return 0;
+  });
+  const rows=devs.map(d=>{
+    const c=d.cfg,s=d.snap;
+    const L=(s&&s.levels)||{};
+    const lv=k=>(L[k]&&L[k].level)||"ok";
+    const cl3=(k)=>lv(k)==="crit"?"r":lv(k)==="warn"?"c":"";
+    const dot=d.status==="online"?"g":(d.status==="disabled"?"off":"r");
+    return '<tr>'+
+      '<td><span class="pill '+dot+'">'+(d.status==="online"?"在线":d.status==="disabled"?"暂停":d.status==="degraded"?"异常":"离线")+'</span></td>'+
+      '<td><a style="color:#d7ecfb;text-decoration:none;cursor:pointer" data-detail="'+c.id+'" title="'+esc(c.host)+'">'+esc(c.name)+'</a>'+
+        '<div class="sub" style="color:var(--dim);font-size:11px;font-family:ui-monospace,Consolas,monospace">'+esc(c.host)+'</div></td>'+
+      '<td>'+esc(c.site||"—")+'</td>'+
+      '<td>'+esc(c.model||"—")+'</td>'+
+      '<td>'+(s?esc(s.supply.text):"—")+'</td>'+
+      '<td class="num">'+((s&&s.input.v)?fmt(s.input.v.a,1):"—")+'</td>'+
+      '<td class="num '+(s?cl3("outputVoltage"):"")+'">'+((s&&s.output.v)?fmt(s.output.v.a,1):"—")+'</td>'+
+      '<td class="num '+(s?cl3("loadPercent"):"")+'">'+((s&&s.load.pct)?fmt(s.load.pct.a,1)+"%":"—")+'</td>'+
+      '<td class="num '+(s?cl3("outputCurrent"):"")+'">'+((s&&s.output.i)?fmt(s.output.i.a,2):"—")+'</td>'+
+      '<td class="num '+(s?cl3("batteryCapacity"):"")+'">'+((s&&s.battery)?fmt(s.battery.capPct,0)+"%":"—")+'</td>'+
+      '<td class="num '+(s?cl3("frequency"):"")+'">'+((s&&s.output.f)?fmt(s.output.f.a,2):"—")+'</td>'+
+      '<td class="num '+(s?cl3("envTemp"):"")+'">'+((s&&s.env)?fmt(s.env.tempC,1):"—")+'</td>'+
+      '<td class="num">'+((s&&s.alarms)?s.alarms.count+"/"+s.alarms.faults:"—")+'</td>'+
+      '<td class="num" style="color:var(--dim)">'+(d.lastOkAt?ago(d.lastOkAt):"—")+'</td>'+
+      '<td><div class="rowacts"><button class="btn sm" data-move="'+c.id+'" data-dir="-1" title="上移">↑</button>'+
+        '<button class="btn sm" data-move="'+c.id+'" data-dir="1" title="下移">↓</button>'+
+        '<button class="btn sm" data-edit="'+c.id+'">编辑</button>'+
+        '<button class="btn sm" data-repoll="'+c.id+'">采集</button>'+
+        '<button class="btn sm danger" data-del="'+c.id+'">删除</button></div></td></tr>';
+  }).join("");
+  const th=(k,label)=>'<th data-sort="'+k+'" style="cursor:pointer">'+label+(listSort.key===k?(listSort.dir>0?" ▲":" ▼"):"")+'</th>';
+  $("dashGroups").innerHTML=
+    '<div class="panel"><div class="tscroll" style="max-height:calc(100vh - 230px)"><table class="dt'+(compactList?" compact":"")+'">'+
+    '<thead><tr>'+th("custom","默认序")+th("name","名称")+th("site","场地")+th("model","型号")+th("status","状态")+
+    '<th>供电</th>'+th("outV","输出 V")+th("load","负载 %")+th("batt","电池 %")+'<th>电流 A</th>'+
+    '<th>频率 Hz</th><th>温度 ℃</th><th>告警/故障</th><th>更新</th><th style="text-align:right">操作</th>'+
+    '</tr></thead><tbody>'+(rows||'<tr><td colspan="15"><div class="empty">没有设备</div></td></tr>')+'</tbody></table></div></div>';
+  $("dashGroups").querySelectorAll("th[data-sort]").forEach(th=>{
+    th.onclick=()=>{
+      const k=th.dataset.sort;
+      if(listSort.key===k) listSort.dir*=-1; else listSort={key:k,dir:1};
+      renderDash();
+    };
+  });
+  renderEvents();
+}
+
+/* ---------------- 分组折叠视图 ---------------- */
+// 记住各分组的展开状态，否则每 5 秒自动刷新会把用户展开的面板折回去
+let openPanels={};
+function renderGroupedView(){
+  const byId={}; STATE.devices.forEach(d=>byId[d.cfg.id]=d);
+  // 分组视图固定展示「所有自定义组 + 未分组」，用于手动拖进拖出
+  const customGroups=(STATE.groups||[]).filter(g=>g.type==="custom");
+  const panels=[];
+  customGroups.forEach(g=>{
+    const items=STATE.devices.filter(d=>(d.cfg.groupIds||[]).indexOf(g.id)>=0);
+    panels.push({group:g, items:items});
+  });
+  const unassigned=STATE.devices.filter(d=>!(d.cfg.groupIds||[]).length);
+  if(unassigned.length) panels.push({group:{id:"__unassigned",name:"未分组",type:"unassigned",color:"#4d5b69"}, items:unassigned});
+
+  const html=panels.map((p,gi)=>{
+    const g=p.group, items=p.items.map(d=>byId[d.cfg.id]).filter(Boolean);
+    let avgLoad=0,cnt=0,warn=0,crit=0;
+    items.forEach(d=>{
+      if(d.snap&&d.snap.load.pct&&d.snap.load.pct.a!==null){ avgLoad+=d.snap.load.pct.a; cnt++; }
+      if(d.snap&&d.snap.severity.level==="warn") warn++;
+      if(d.snap&&d.snap.severity.level==="crit") crit++;
+    });
+    const al=cnt?Math.round(avgLoad/cnt):0;
+    // 默认全部展开：空分组要能作为拖放目标，用户可自行折叠
+    const isOpen = (openPanels[g.id] !== undefined) ? openPanels[g.id] : true;
+    if(isOpen) openPanels[g.id]=true;
+    return '<div class="gpanel'+(isOpen?" open":"")+'" data-gid="'+esc(g.id)+'" data-gtype="'+esc(g.type)+'">'+
+      '<div class="gh"><span class="garrow">▶</span>'+
+        '<span class="gchip" style="background:'+(g.color||"#4ea8de")+'"></span>'+
+        '<span class="gname">'+esc(g.name)+'</span>'+
+        '<span class="gcount">'+items.length+' 台</span>'+
+        '<span class="gsum">'+
+          (cnt?'<span>平均负载 <b>'+al+'%</b></span>':'')+
+          (warn?'<span style="color:var(--warn)">告警 <b style="color:var(--warn)">'+warn+'</b></span>':'')+
+          (crit?'<span style="color:var(--crit)">严重 <b style="color:var(--crit)">'+crit+'</b></span>':'')+
+        '</span><span class="gline"></span></div>'+
+      '<div class="gb"><div class="tiles">'+items.map(renderTile).join("")+'</div>'+
+        (items.length?'':'<div class="hint" style="padding:10px 2px">空分组 —— 把磁贴拖进来即可归组</div>')+'</div></div>';
+  }).join("");
+  $("dashGroups").innerHTML =
+    (html || '<div class="empty" style="padding:40px 0">还没有分组，点下方「新建分组」开始</div>') +
+    '<div style="margin-top:12px"><button class="btn sm" id="btnAddGroup2">+ 新建分组</button>' +
+    '<span class="drag-hint" style="margin-left:12px">↔ 把磁贴拖进自定义分组即可归组，拖回「未分组」可移出</span></div>';
+  $("dashGroups").querySelectorAll(".gh").forEach(h=>{
+    h.onclick=()=>{
+      const panel=h.parentElement;
+      panel.classList.toggle("open");
+      openPanels[panel.dataset.gid]=panel.classList.contains("open");
+    };
+  });
+  const addBtn=$("btnAddGroup2");
+  if(addBtn) addBtn.onclick=()=>openGroupForm(null);
+  bindDrag($("dashGroups"));
+  bindGroupDrop($("dashGroups"));
+  renderEvents();
+}
+
+// 拖到另一个分组面板 → 加入该组（或拖回未分组 → 移出）
+function bindGroupDrop(root){
+  root.querySelectorAll(".gpanel").forEach(panel=>{
+    const gb=panel.querySelector(".gb");
+    if(!gb) return;
+    const accepts = panel.dataset.gtype==="custom" || panel.dataset.gtype==="unassigned";
+    gb.addEventListener("dragover", e=>{
+      if(!DRAG || !accepts) return;
+      e.preventDefault();
+      try{ e.dataTransfer.dropEffect="move"; }catch(_){}
+      clearDropMarks();
+      panel.classList.add("drop-target");
+    });
+    gb.addEventListener("dragleave", ()=>{ panel.classList.remove("drop-target"); });
+    gb.addEventListener("drop", e=>{
+      if(!DRAG || !accepts) return;
+      e.preventDefault();
+      const gid=panel.dataset.gid;
+      const allIds=STATE.devices.map(d=>d.cfg.id);
+      const from=allIds.indexOf(DRAG.id);
+      if(from<0) return;
+      allIds.splice(from,1);
+      allIds.push(DRAG.id);
+      clearDropMarks();
+      saveOrder(allIds, gid);
+    });
+  });
+}
+
+function renderCardsView(){
+  const byId={}; STATE.devices.forEach(d=>byId[d.cfg.id]=d);
+  const groups=visibleGroups();
+  let html="";
+  for(const g of groups){
+    const items=g.deviceIds.map(id=>byId[id]).filter(Boolean);
+    if(!items.length) continue;
+    if(groups.length>1){
+      html+='<div class="ghead" style="margin:14px 0 9px"><span class="gchip" style="background:'+(g.group.color||"#4ea8de")+'"></span>'+
+        '<span class="gname">'+esc(g.group.name)+'</span><span class="gcount">'+items.length+' 台</span><span class="gline"></span></div>';
+    }
+    html+='<div class="grid">'+items.map(d=>renderCard(d)).join("")+'</div>';
+  }
+  $("dashGroups").innerHTML=html;
+  bindSparks($("dashGroups"));
+  bindDrag($("dashGroups"));
+  renderEvents();
+}
+
+function renderTilesView(){
+  const byId={}; STATE.devices.forEach(d=>byId[d.cfg.id]=d);
+  const groups=visibleGroups();
+  let html="";
+  for(const g of groups){
+    const items=g.deviceIds.map(id=>byId[id]).filter(Boolean);
+    if(!items.length) continue;
+    if(groups.length>1){
+      html+='<div class="ghead" style="margin:14px 0 9px"><span class="gchip" style="background:'+(g.group.color||"#4ea8de")+'"></span>'+
+        '<span class="gname">'+esc(g.group.name)+'</span><span class="gcount">'+items.length+' 台</span><span class="gline"></span></div>';
+    }
+    html+='<div class="tiles">'+items.map(renderTile).join("")+'</div>';
+  }
+  $("dashGroups").innerHTML=html;
+  bindDrag($("dashGroups"));
+  renderEvents();
+}
+
+function renderEvents(){
+  const evs=STATE.events||[];
+  $("events").innerHTML = evs.length ? evs.slice(0,30).map(e=>
+    '<div class="ev '+e.level+'"><span class="t">'+clock(e.ts)+'</span><span class="lv"></span><span class="msg">'+esc(e.msg)+'</span></div>').join("")
+    : '<div class="empty">暂无事件</div>';
+}
+
+function renderDash(){
+  const vm=(STATE.ui&&STATE.ui.viewMode)||"tiles";
+  const shown=visibleDevices().length, total=STATE.devices.length;
+  $("dashCount").textContent = onlyAlert ? ("显示 "+shown+" / 共 "+total+" 台（仅异常）") : ("共 "+total+" 台");
+  $("compactWrap").style.display = (vm==="list")?"inline-flex":"none";
+  if(!total){
+    $("dashGroups").innerHTML='<div class="empty" style="padding:60px 0">还没有设备，点右上角「+ 添加 UPS」录入 IP 与网页账号密码即可。</div>';
+    renderEvents();
+    return;
+  }
+  if(vm==="list") return renderListView();
+  if(vm==="groups") return renderGroupedView();
+  if(vm==="cards") return renderCardsView();
+  return renderTilesView();
+}
+
+/* ---------------- 设备管理 ---------------- */
+function devGroupChips(d){
+  const gs=STATE.groups||[];
+  const mine=(d.cfg.groupIds||[]).map(id=>gs.find(g=>g.id===id)).filter(Boolean);
+  const auto=[];
+  if(d.cfg.model){ const g=gs.find(x=>x.type==="model"&&x.value===d.cfg.model); if(g) auto.push(g); }
+  if(d.cfg.site){ const g=gs.find(x=>x.type==="site"&&x.value===d.cfg.site); if(g) auto.push(g); }
+  const all=auto.concat(mine.filter(g=>!auto.find(a=>a.id===g.id)));
+  if(!all.length) return '<span class="pill off">未分组</span>';
+  return all.map(g=>'<span class="pill" style="border-color:'+(g.color||"#4ea8de")+'66;color:'+(g.color||"#8fd9b0")+'">'+esc(g.name)+'</span>').join(" ");
+}
+function statusPill(d){
+  if(d.status==="disabled") return '<span class="pill off">已暂停</span>';
+  if(d.status==="online"){
+    const lv=d.snap?d.snap.severity.level:"ok";
+    return '<span class="pill '+(lv==="ok"?"g":lv==="warn"?"y":"r")+'">'+(lv==="ok"?"在线":lv==="warn"?"告警":"严重")+'</span>';
+  }
+  return '<span class="pill r">'+(d.status==="degraded"?"异常":"离线")+'</span>';
+}
+function matchDevice(d){
+  const c=d.cfg;
+  const q=($("devSearch").value||"").trim().toLowerCase();
+  if(q){
+    const hay=[c.name,c.host,c.site,c.model,c.integrator,c.serial,(c.tags||[]).join(" ")].join(" ").toLowerCase();
+    if(hay.indexOf(q)<0) return false;
+  }
+  const fs=$("devFilterStatus").value;
+  if(fs && d.status!==fs) return false;
+  const fg=$("devFilterGroup").value;
+  if(fg){
+    const gs=STATE.groups||[];
+    const inGroup=(c.groupIds||[]).indexOf(fg)>=0 ||
+      gs.some(g=>g.id===fg && g.type==="model" && g.value===c.model) ||
+      gs.some(g=>g.id===fg && g.type==="site" && g.value===c.site);
+    if(!inGroup) return false;
+  }
+  return true;
+}
+function renderDevices(){
+  const rows=STATE.devices.filter(matchDevice);
+  const tb=$("devTable").querySelector("tbody");
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="13"><div class="empty">没有符合条件的设备</div></td></tr>'; }
+  else{
+    tb.innerHTML=rows.map(d=>{
+      const c=d.cfg, s=d.snap;
+      return '<tr>'+
+        '<td><input type="checkbox" class="devchk" data-id="'+c.id+'"'+(devSelected.has(c.id)?" checked":"")+'></td>'+
+        '<td><a style="color:#d7ecfb;text-decoration:none;cursor:pointer" data-detail="'+c.id+'">'+esc(c.name)+'</a>'+
+          (c.note?'<div style="color:var(--dim);font-size:11.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis">'+esc(c.note)+'</div>':'')+'</td>'+
+        '<td class="num" style="font-family:ui-monospace,Consolas,monospace">'+esc(c.host)+'</td>'+
+        '<td>'+esc(c.site||"—")+'</td>'+
+        '<td>'+esc(c.model||"—")+'</td>'+
+        '<td class="num">'+esc(c.commissionDate||"—")+'</td>'+
+        '<td>'+esc(c.integrator||"—")+'</td>'+
+        '<td>'+devGroupChips(d)+'</td>'+
+        '<td>'+statusPill(d)+'</td>'+
+        '<td>'+(s?esc(s.supply.text):"—")+'</td>'+
+        '<td class="num">'+(s&&s.load.pct&&s.load.pct.a!==null?fmt(s.load.pct.a,1)+"%":"—")+'</td>'+
+        '<td class="num">'+(s&&s.battery.capPct!==null?fmt(s.battery.capPct,0)+"%":"—")+'</td>'+
+        '<td><div class="rowacts">'+
+          '<button class="btn sm" data-move="'+c.id+'" data-dir="-1" title="上移">↑</button>'+
+          '<button class="btn sm" data-move="'+c.id+'" data-dir="1" title="下移">↓</button>'+
+          '<button class="btn sm" data-edit="'+c.id+'">编辑</button>'+
+          '<button class="btn sm" data-poll="'+c.id+'">采集</button>'+
+          '<button class="btn sm" data-atest="'+c.id+'">告警测试</button>'+
+          '<button class="btn sm danger" data-del="'+c.id+'">删除</button>'+
+        '</div></td></tr>';
+    }).join("");
+  }
+  $("devSelInfo").textContent = devSelected.size ? ('已选 '+devSelected.size+' 台') : ('共 '+rows.length+' 台 / 总 '+STATE.devices.length+' 台');
+  $("devCheckAll").checked = rows.length>0 && rows.every(d=>devSelected.has(d.cfg.id));
+}
+
+/* ---------------- 分组 / 模板 / 告警 / 系统 ---------------- */
+function renderGroups(){
+  const tb=$("grpTable").querySelector("tbody");
+  const typeText={model:"按型号（动态）",site:"按场地（动态）",status:"按状态（动态）",custom:"自定义（静态）"};
+  const gs=STATE.groups||[];
+  tb.innerHTML = gs.length ? gs.map(g=>{
+    const n=STATE.devices.filter(d=>{
+      const c=d.cfg;
+      if(g.type==="custom") return (c.groupIds||[]).indexOf(g.id)>=0;
+      if(g.type==="model") return c.model===g.value;
+      if(g.type==="site") return c.site===g.value;
+      if(g.type==="status"){
+        const lv = d.status==="online"&&d.snap?d.snap.severity.level:"offline";
+        return lv===g.value;
+      }
+      return false;
+    }).length;
+    return '<tr><td><span class="gchip" style="background:'+(g.color||"#4ea8de")+';display:inline-block;margin-right:7px"></span>'+esc(g.name)+'</td>'+
+      '<td>'+esc(typeText[g.type]||g.type)+'</td>'+
+      '<td>'+esc(g.value||"—")+'</td>'+
+      '<td><span class="pill" style="border-color:'+(g.color||"#4ea8de")+'66;color:'+(g.color||"#8fd9b0")+'">'+esc(g.color||"—")+'</span></td>'+
+      '<td class="num">'+n+'</td>'+
+      '<td>'+(g.enabled!==false?'<span class="pill g">启用</span>':'<span class="pill off">停用</span>')+'</td>'+
+      '<td><div class="rowacts"><button class="btn sm" data-gedit="'+g.id+'">编辑</button>'+
+      '<button class="btn sm danger" data-gdel="'+g.id+'">删除</button></div></td></tr>';
+  }).join("") : '<tr><td colspan="7"><div class="empty">暂无分组</div></td></tr>';
+}
+function renderTemplates(){
+  const tb=$("tplTable").querySelector("tbody");
+  const ts=SETTINGS.templates||[];
+  tb.innerHTML = ts.length ? ts.map(t=>{
+    const d=t.defaults||{};
+    const desc=Object.keys(d).filter(k=>d[k]!==""&&d[k]!==undefined&&d[k]!==null)
+      .map(k=>k+"="+d[k]).join("，")||"—";
+    return '<tr><td>'+esc(t.name)+'</td><td>'+esc(t.vendor||"—")+'</td>'+
+      '<td style="color:var(--muted);font-size:12px">'+esc(desc)+'</td>'+
+      '<td style="color:var(--muted);font-size:12px">'+esc(t.note||"—")+'</td>'+
+      '<td><div class="rowacts"><button class="btn sm" data-tedit="'+t.id+'">编辑</button>'+
+      '<button class="btn sm danger" data-tdel="'+t.id+'">删除</button></div></td></tr>';
+  }).join("") : '<tr><td colspan="5"><div class="empty">暂无模板</div></td></tr>';
+}
+function chanSummary(c){
+  if(c.type==="wecom"){
+    const u=c.config.webhook||"";
+    const m=u.match(/key=([\w-]+)/);
+    return m?('webhook key: '+m[1].slice(0,8)+"…"):(u?"已配置":"未配置");
+  }
+  const cfg=c.config||{};
+  const to=Array.isArray(cfg.to)?cfg.to.join(","):(cfg.to||"");
+  return [cfg.host,cfg.user,to,(cfg.secure?"TLS":"明文")].filter(Boolean).join(" · ")||"—";
+}
+function condText(c){
+  const fieldText={status:"运行状态",severity:"严重级别",supply:"供电状态码",batteryState:"电池状态码",
+    faultCount:"故障数",alarmCount:"告警数",loadPct:"负载率%",batteryCap:"电池容量%",envTemp:"环境温度℃",
+    outputV:"输出电压V",inputV:"输入电压V",backupMin:"备电时间min",model:"型号",site:"场地",deviceName:"设备名"};
+  const opText={eq:"=",ne:"≠",gt:">",ge:"≥",lt:"<",le:"≤"};
+  return (fieldText[c.field]||c.field)+" "+(opText[c.op]||c.op)+" "+(c.value);
+}
+const TH_PARAM_DEFS = {
+  outputVoltage:[['warnPct','黄线 ±%'],['critPct','红线 ±%']],
+  inputVoltage:[['warnPct','黄线 ±%'],['critPct','红线 ±%']],
+  bypassVoltage:[['warnPct','黄线 ±%'],['critPct','红线 ±%']],
+  lineVoltage:[['warnPct','黄线 ±%'],['critPct','红线 ±%']],
+  outputCurrent:[['warnPct','黄线 %额定'],['critPct','红线 %额定']],
+  loadPercent:[['warn','黄线 %'],['crit','红线 %']],
+  batteryCapacity:[['warn','黄线 %'],['crit','红线 %']],
+  frequency:[['warn','黄线 ±Hz'],['crit','红线 ±Hz']],
+  envTemp:[['warn','黄线 ℃'],['crit','红线 ℃']],
+  phaseImbalance:[['warn','黄线 %'],['crit','红线 %']]
+};
+const TH_NOTE = {
+  outputVoltage:'相电压口径，标称 220V（单相/三相通用）。GB/T 7260 UPS 稳态 ±1%，GB 50174 末端 ±7%，GB/T 12325',
+  inputVoltage:'相电压口径。超出 ITA2 工作范围 176~288V 即红线（三相相电压折算后同区间）',
+  bypassVoltage:'相电压口径。ITA2 手册旁路范围 -40%~+20%',
+  lineVoltage:'三相线电压标称 380V，单相机型不适用',
+  outputCurrent:'额定电流=额定容量÷220V(单相)或÷(√3×380V)(三相)；手册过载 105~125%/10min',
+  loadPercent:'UPS 长期负载率最佳区间 40%~70%，超过 85% 触发红线',
+  batteryCapacity:'深放电显著加速电池老化',
+  frequency:'GB 50174 要求 50Hz±0.5Hz；ITA2 输入频率范围 40~70Hz',
+  envTemp:'ITA2 工作 0~40℃ 不降额，50℃ 降额至 70%~80%；电池最佳 20~25℃',
+  phaseImbalance:'GB/T 15543 电压不平衡度 ≤2%'
+};
+function renderThresholds(){
+  const tb=$("thTable").querySelector("tbody");
+  const th=SETTINGS.thresholds||{};
+  const keys=Object.keys(TH_PARAM_DEFS);
+  tb.innerHTML = keys.length ? keys.map(k=>{
+    const cfg=th[k]||{};
+    const params=TH_PARAM_DEFS[k].map(([p,label])=>
+      '<span style="white-space:nowrap">'+label+' <input type="number" step="0.1" style="width:66px;padding:3px 6px;border-radius:5px;border:1px solid var(--line2);background:#0b1016;color:var(--text);font-size:12px" '+
+      'id="th_'+k+'_'+p+'" value="'+(cfg[p]!==undefined?cfg[p]:"")+'"></span>').join("　");
+    return '<tr><td style="font-weight:600">'+esc(cfg.label||k)+'</td>'+
+      '<td>'+params+'</td>'+
+      '<td style="color:var(--muted);font-size:11.5px;max-width:420px">'+esc(TH_NOTE[k]||"")+'</td>'+
+      '<td><label class="switch"><input type="checkbox" id="th_'+k+'_enabled"'+(cfg.enabled!==false?" checked":"")+'><i></i></label></td></tr>';
+  }).join("") : '<tr><td colspan="4"><div class="empty">暂无阈值配置</div></td></tr>';
+}
+$("btnSaveTh").onclick=async()=>{
+  const payload={};
+  const th=SETTINGS.thresholds||{};
+  for(const k of Object.keys(TH_PARAM_DEFS)){
+    const o={};
+    for(const [p] of TH_PARAM_DEFS[k]){
+      const el=$("th_"+k+"_"+p);
+      if(el) o[p]=Number(el.value);
+    }
+    const en=$("th_"+k+"_enabled");
+    if(en) o.enabled=en.checked;
+    if(Object.keys(o).length) payload[k]=o;
+  }
+  try{
+    await api("/api/thresholds",{method:"PUT",body:JSON.stringify(payload)});
+    toast("阈值已保存"); await refresh();
+  }catch(e){ toast(e.message); }
+};
+$("btnResetTh").onclick=async()=>{
+  if(!confirm("确认恢复默认阈值？")) return;
+  await api("/api/thresholds/reset",{method:"POST"});
+  toast("已恢复默认"); await refresh();
+};
+
+function renderAlerts(){
+  const tb=$("chTable").querySelector("tbody");
+  const cs=SETTINGS.channels||[];
+  tb.innerHTML = cs.length ? cs.map(c=>
+    '<tr><td>'+esc(c.name)+'</td>'+
+    '<td>'+(c.type==="wecom"?"企业微信机器人":"邮件 SMTP")+'</td>'+
+    '<td style="color:var(--muted);font-size:12px">'+esc(chanSummary(c))+'</td>'+
+    '<td>'+(c.enabled!==false?'<span class="pill g">启用</span>':'<span class="pill off">停用</span>')+'</td>'+
+    '<td><div class="rowacts"><button class="btn sm" data-ctest="'+c.id+'">测试</button>'+
+    '<button class="btn sm" data-cedit="'+c.id+'">编辑</button>'+
+    '<button class="btn sm danger" data-cdel="'+c.id+'">删除</button></div></td></tr>'
+  ).join("") : '<tr><td colspan="5"><div class="empty">暂无通知渠道</div></td></tr>';
+
+  const rb=$("ruleTable").querySelector("tbody");
+  const rs=SETTINGS.rules||[];
+  const chMap={}; cs.forEach(c=>chMap[c.id]=c.name);
+  rb.innerHTML = rs.length ? rs.map(r=>
+    '<tr><td>'+esc(r.name)+'</td>'+
+    '<td>'+(r.severity==="crit"?'<span class="pill r">严重</span>':r.severity==="warn"?'<span class="pill y">告警</span>':'<span class="pill g">提示</span>')+'</td>'+
+    '<td style="font-size:12px">'+(r.conditions||[]).map(c=>'<span class="pill">'+esc(condText(c))+'</span>').join(" ")+'</td>'+
+    '<td style="font-size:12px">'+(r.channels&&r.channels.length?r.channels.map(id=>esc(chMap[id]||id)).join("、"):'<span class="pill off">全部启用渠道</span>')+'</td>'+
+    '<td class="num">'+r.cooldownSec+'s</td><td class="num">'+(r.repeatSec?r.repeatSec+"s":"—")+'</td>'+
+    '<td>'+(r.notifyRecover?'<span class="pill g">是</span>':'<span class="pill off">否</span>')+'</td>'+
+    '<td>'+(r.enabled!==false?'<span class="pill g">启用</span>':'<span class="pill off">停用</span>')+'</td>'+
+    '<td><div class="rowacts"><button class="btn sm" data-redit="'+r.id+'">编辑</button>'+
+    '<button class="btn sm danger" data-rdel="'+r.id+'">删除</button></div></td></tr>'
+  ).join("") : '<tr><td colspan="9"><div class="empty">暂无告警规则</div></td></tr>';
+
+  const ab=$("ahTable").querySelector("tbody");
+  const ah=STATE.alertHistory||[];
+  ab.innerHTML = ah.length ? ah.map(h=>
+    '<tr><td class="num">'+dt(h.ts)+'</td><td>'+esc(h.rule)+'</td><td>'+esc(h.device)+'</td>'+
+    '<td>'+esc(h.kind)+'</td><td style="font-size:12px">'+(h.result||[]).map(t=>
+      '<span class="pill '+(t.ok?"g":"r")+'">'+esc(t.channel)+(t.ok?"":"："+esc(t.error||"失败"))+'</span>').join(" ")+'</td></tr>'
+  ).join("") : '<tr><td colspan="5"><div class="empty">暂无投递记录</div></td></tr>';
+}
+function renderSystem(){
+  $("sysDevices").textContent=STATE.devices.length;
+  $("sysGroups").textContent=(STATE.groups||[]).length;
+  $("sysRules").textContent=(SETTINGS.rules||[]).length;
+  $("sysChannels").textContent=(SETTINGS.channels||[]).length;
+  $("sysAuth").textContent = STATE.auth&&STATE.auth.enabled ? "已启用" : "未启用（见设计文档）";
+  $("sysTime").textContent = dt(STATE.serverTime);
+}
+
+/* ---------------- 设备表单 ---------------- */
+function openDeviceForm(id){
+  editingId = id||null;
+  const d = id ? STATE.devices.find(x=>x.cfg.id===id) : null;
+  const c = d?d.cfg:{name:"",host:"",port:80,username:"user",password:"",model:"",site:"",
+    commissionDate:"",integrator:"",serial:"",note:"",tags:[],groupIds:[],intervalMs:10000,enabled:true};
+  const fields=[
+    {key:"name",label:"设备名称",required:true,placeholder:"例如：广州仓库-1F-UPS01"},
+    {type:"row",keys:["host","port"],fields:[
+      {key:"host",label:"IP 地址",required:true,placeholder:"10.204.130.240"},
+      {key:"port",label:"端口",type:"number"}]},
+    {type:"row",keys:["username","password"],fields:[
+      {key:"username",label:"网页账号",placeholder:"user"},
+      {key:"password",label:"网页密码",type:"password",hint: id?"留空表示不修改":"新建时必填"}]},
+    {type:"row",keys:["site","integrator"],fields:[
+      {key:"site",label:"所在场地名称",placeholder:"例如：武汉仓库 / 总部 3F 机房"},
+      {key:"integrator",label:"服务商（集成商）",placeholder:"例如：某某电气工程有限公司"}]},
+    {type:"row",keys:["model","serial"],fields:[
+      {key:"model",label:"设备型号",hint:"留空时自动读取设备自报型号"},
+      {key:"serial",label:"出厂序列号",placeholder:"可选"}]},
+    {key:"commissionDate",label:"上线日期",type:"date"},
+    {type:"row",keys:["intervalMs","enabled"],fields:[
+      {key:"intervalMs",label:"采集间隔（毫秒）",type:"number"},
+      {key:"enabled",label:"启用采集",type:"switch"}]},
+    {key:"groupIds",label:"所属自定义分组",type:"multi",
+      options:(STATE.groups||[]).filter(g=>g.type==="custom").map(g=>({value:g.id,label:g.name}))},
+    {key:"tags",label:"标签（逗号分隔）",placeholder:"重点,5F,UPS"},
+    {key:"note",label:"备注",type:"textarea"}
+  ];
+  const values = Object.assign({}, c);
+  if(id) values.password="";
+  const tplOpts=[{value:"",label:"（不使用模板）"}].concat((SETTINGS.templates||[]).map(t=>({value:t.id,label:t.name})));
+  const html = '<label class="f"><span class="lbl">使用配置模板</span><select class="f" id="fld_template">'+tplOpts.map(o=>
+      '<option value="'+esc(o.value)+'">'+esc(o.label)+'</option>').join("")+'</select>'+
+      '<div class="hint">选择模板后自动预填采集间隔、场地、服务商等公共参数</div></label>'+
+    buildForm(fields,values);
+  openSheet({
+    title: id?"编辑设备":"添加 UPS",
+    html,
+    onReady(root){
+      bindChips(root);
+      const tsel=$("fld_template");
+      tsel.onchange=()=>{
+        const t=(SETTINGS.templates||[]).find(x=>x.id===tsel.value);
+        if(!t) return;
+        const def=t.defaults||{};
+        const map={intervalMs:"intervalMs",site:"site",integrator:"integrator",username:"username",port:"port"};
+        for(const k of Object.keys(map)){
+          if(def[k]!==undefined&&def[k]!==""&&$("fld_"+map[k])) $("fld_"+map[k]).value=def[k];
+        }
+        if(def.enabled!==undefined&&$("fld_enabled")) $("fld_enabled").checked=!!def.enabled;
+        toast("已套用模板「"+t.name+"」");
+      };
+    },
+    async onSubmit(){
+      const v=collectForm(fields,values);
+      const payload={
+        name:v.name, host:(v.host||"").trim(), port:Number(v.port)||80,
+        username:v.username||"user", password:v.password||"",
+        model:v.model||"", site:v.site||"", integrator:v.integrator||"",
+        serial:v.serial||"", commissionDate:v.commissionDate||"", note:v.note||"",
+        tags:(v.tags||"").split(/[,，]/).map(s=>s.trim()).filter(Boolean),
+        groupIds:v.groupIds||[], intervalMs:Number(v.intervalMs)||10000, enabled:!!v.enabled
+      };
+      if(!payload.host){ toast("请填写 IP 地址"); throw new Error("缺少 IP 地址"); }
+      if(!id && !payload.password){ toast("请填写网页密码"); throw new Error("缺少密码"); }
+      if(id) await api("/api/devices/"+id,{method:"PUT",body:JSON.stringify(payload)});
+      else await api("/api/devices",{method:"POST",body:JSON.stringify(payload)});
+      closeSheet(); toast(id?"已保存":"已添加，正在建立会话"); await refresh();
+    }
+  });
+}
+
+/* ---------------- 分组表单 ---------------- */
+function openGroupForm(id){
+  const g = id ? (STATE.groups||[]).find(x=>x.id===id) : null;
+  const values = g? Object.assign({},g) : {name:"",type:"custom",value:"",color:"#4ea8de",enabled:true};
+  const fields=[
+    {key:"name",label:"分组名称",required:true,placeholder:"例如：重点关注 / 5F 机房"},
+    {key:"type",label:"分组类型",type:"select",options:[
+      {value:"custom",label:"自定义（手工归组）"},
+      {value:"model",label:"按型号（动态）"},
+      {value:"site",label:"按场地（动态）"},
+      {value:"status",label:"按状态（动态）"}]},
+    {key:"value",label:"匹配值",hint:"型号/场地类型填对应值；状态类型填 ok / warn / crit / offline"},
+    {key:"color",label:"颜色",type:"color"},
+    {key:"enabled",label:"启用",type:"switch"}
+  ];
+  openSheet({
+    title: id?"编辑分组":"新建分组", narrow:true, html:buildForm(fields,values),
+    onReady(root){ bindChips(root); },
+    async onSubmit(){
+      const v=collectForm(fields,values);
+      if(!v.name){ toast("请填写分组名称"); throw new Error("缺少名称"); }
+      if(id) await api("/api/groups/"+id,{method:"PUT",body:JSON.stringify(v)});
+      else await api("/api/groups",{method:"POST",body:JSON.stringify(v)});
+      closeSheet(); toast("已保存"); await refresh();
+    }
+  });
+}
+
+/* ---------------- 模板表单 ---------------- */
+function openTemplateForm(id){
+  const t = id ? (SETTINGS.templates||[]).find(x=>x.id===id) : null;
+  const d = t? (t.defaults||{}) : {};
+  const values = {
+    name: t?t.name:"", vendor: t?t.vendor:"vertiv-ita2", note: t?t.note:"",
+    intervalMs: d.intervalMs!==undefined?d.intervalMs:10000,
+    enabled: d.enabled!==undefined?d.enabled:true,
+    site: d.site||"", integrator: d.integrator||"", username: d.username||"user", port: d.port||80
+  };
+  const fields=[
+    {key:"name",label:"模板名称",required:true,placeholder:"例如：ITA2 标准模板"},
+    {key:"vendor",label:"适用厂商"},
+    {type:"row",keys:["intervalMs","enabled"],fields:[
+      {key:"intervalMs",label:"默认采集间隔（毫秒）",type:"number"},
+      {key:"enabled",label:"默认启用",type:"switch"}]},
+    {type:"row",keys:["site","integrator"],fields:[
+      {key:"site",label:"默认场地",placeholder:"留空表示不预填"},
+      {key:"integrator",label:"默认服务商"}]},
+    {type:"row",keys:["username","port"],fields:[
+      {key:"username",label:"默认网页账号"},
+      {key:"port",label:"默认端口",type:"number"}]},
+    {key:"note",label:"说明",type:"textarea"}
+  ];
+  openSheet({
+    title: id?"编辑模板":"新建模板", html:buildForm(fields,values),
+    onReady(root){ bindChips(root); },
+    async onSubmit(){
+      const v=collectForm(fields,values);
+      const payload={name:v.name,vendor:v.vendor,note:v.note,defaults:{
+        intervalMs:Number(v.intervalMs)||10000, enabled:!!v.enabled,
+        site:v.site||"", integrator:v.integrator||"", username:v.username||"user", port:Number(v.port)||80
+      }};
+      if(id) await api("/api/templates/"+id,{method:"PUT",body:JSON.stringify(payload)});
+      else await api("/api/templates",{method:"POST",body:JSON.stringify(payload)});
+      closeSheet(); toast("已保存"); await refresh();
+    }
+  });
+}
+
+/* ---------------- 渠道表单 ---------------- */
+function openChannelForm(id){
+  const c = id ? (SETTINGS.channels||[]).find(x=>x.id===id) : null;
+  const cfg = c? (c.config||{}) : {};
+  const values = {
+    name: c?c.name:"", type: c?c.type:"wecom", enabled: c?c.enabled:true,
+    webhook: cfg.webhook||"", mentionedList: (cfg.mentionedList||[]).join(","),
+    host: cfg.host||"", port: cfg.port!==undefined?cfg.port:465, secure: cfg.secure!==false,
+    user: cfg.user||"", pass: cfg.pass||"", from: cfg.from||"",
+    to: (cfg.to||[]).join(","), subjectPrefix: cfg.subjectPrefix||"[UPS监控]"
+  };
+  const wecomFields=[
+    {key:"webhook",label:"Webhook 地址",required:true,placeholder:"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxxxxxx"},
+    {key:"mentionedList",label:"@提醒成员（手机号/账号，逗号分隔）",placeholder:"13800000000,ZhangSan"}
+  ];
+  const mailFields=[
+    {type:"row",keys:["host","port"],fields:[
+      {key:"host",label:"SMTP 服务器",required:true,placeholder:"smtp.exmail.qq.com"},
+      {key:"port",label:"SMTP 端口",type:"number",hint:"465 = 隐式 TLS；587 = STARTTLS；25 = 明文"}]},
+    {key:"secure",label:"使用 SSL/TLS",type:"switch"},
+    {type:"row",keys:["user","pass"],fields:[
+      {key:"user",label:"登录账号"},
+      {key:"pass",label:"登录口令",type:"password",hint:id?"留空表示不修改":""}]},
+    {type:"row",keys:["from","to"],fields:[
+      {key:"from",label:"发件人",placeholder:"ups-monitor@company.com"},
+      {key:"to",label:"收件人（逗号分隔）",required:true,placeholder:"ops@company.com,manager@company.com"}]},
+    {key:"subjectPrefix",label:"邮件主题前缀"}
+  ];
+  function render(){
+    const fs = values.type==="wecom" ? wecomFields : mailFields;
+    const f2=[
+      {key:"name",label:"渠道名称",required:true},
+      {key:"type",label:"渠道类型",type:"select",options:[{value:"wecom",label:"企业微信群机器人"},{value:"email",label:"邮件 SMTP"}]},
+      {key:"enabled",label:"启用",type:"switch"}
+    ].concat(fs);
+    const box=$("sheetBody");
+    box.innerHTML = buildForm(f2,values);
+    bindChips(box);
+    const ts=$("fld_type"); if(ts) ts.onchange=()=>{ values.type=ts.value; render(); };
+  }
+  openSheet({
+    title: id?"编辑通知渠道":"新建通知渠道", narrow:true, html:"",
+    onReady(){ render(); },
+    async onSubmit(){
+      const get=(k)=>{ const el=$("fld_"+k); if(!el) return undefined; return el.type==="checkbox"?el.checked:el.value; };
+      const payload={
+        name:get("name"), type:get("type"), enabled:get("enabled"),
+        config: values.type==="wecom"
+          ? { webhook:get("webhook")||"", mentionedList:(get("mentionedList")||"").split(/[,，]/).map(s=>s.trim()).filter(Boolean) }
+          : { host:get("host")||"", port:Number(get("port"))||465, secure:!!get("secure"),
+              user:get("user")||"", pass:get("pass")||"", from:get("from")||"",
+              to:(get("to")||"").split(/[,，]/).map(s=>s.trim()).filter(Boolean),
+              subjectPrefix:get("subjectPrefix")||"[UPS监控]" }
+      };
+      if(!payload.name){ toast("请填写渠道名称"); throw new Error("缺少名称"); }
+      if(id) await api("/api/channels/"+id,{method:"PUT",body:JSON.stringify(payload)});
+      else await api("/api/channels",{method:"POST",body:JSON.stringify(payload)});
+      closeSheet(); toast("已保存"); await refresh();
+    }
+  });
+}
+
+/* ---------------- 规则表单 ---------------- */
+const RULE_FIELDS=[
+  {value:"status",label:"运行状态"},{value:"severity",label:"严重级别"},
+  {value:"supply",label:"供电状态码"},{value:"batteryState",label:"电池状态码"},
+  {value:"faultCount",label:"故障数"},{value:"alarmCount",label:"告警数"},
+  {value:"loadPct",label:"负载率(%)"},{value:"batteryCap",label:"电池容量(%)"},
+  {value:"envTemp",label:"环境温度(℃)"},{value:"outputV",label:"输出电压(V)"},
+  {value:"inputV",label:"输入电压(V)"},{value:"backupMin",label:"备电时间(min)"},
+  {value:"outputVoltageLevel",label:"输出电压等级(ok/warn/crit)"},
+  {value:"inputVoltageLevel",label:"输入电压等级(ok/warn/crit)"},
+  {value:"lineVoltageLevel",label:"线电压等级(ok/warn/crit)"},
+  {value:"bypassVoltageLevel",label:"旁路电压等级(ok/warn/crit)"},
+  {value:"outputCurrentLevel",label:"输出电流等级(ok/warn/crit)"},
+  {value:"loadPercentLevel",label:"负载率等级(ok/warn/crit)"},
+  {value:"batteryCapacityLevel",label:"电池容量等级(ok/warn/crit)"},
+  {value:"frequencyLevel",label:"输出频率等级(ok/warn/crit)"},
+  {value:"envTempLevel",label:"环境温度等级(ok/warn/crit)"}
+];
+const RULE_OPS=[{value:"eq",label:"等于"},{value:"ne",label:"不等于"},{value:"gt",label:">"},{value:"ge",label:"≥"},{value:"lt",label:"<"},{value:"le",label:"≤"}];
+function openRuleForm(id){
+  const r = id ? (SETTINGS.rules||[]).find(x=>x.id===id) : null;
+  const values = r? Object.assign({},r,{channels:(r.channels||[]).slice()}) :
+    {name:"",severity:"warn",enabled:true,cooldownSec:300,repeatSec:0,notifyRecover:true,channels:[],conditions:[{field:"status",op:"eq",value:"offline"}]};
+  const chOpts=(SETTINGS.channels||[]).map(c=>({value:c.id,label:c.name}));
+  const fields=[
+    {key:"name",label:"规则名称",required:true,placeholder:"例如：设备失联"},
+    {type:"row",keys:["severity","enabled"],fields:[
+      {key:"severity",label:"告警级别",type:"select",options:[{value:"crit",label:"严重"},{value:"warn",label:"告警"},{value:"ok",label:"提示"}]},
+      {key:"enabled",label:"启用",type:"switch"}]},
+    {type:"row",keys:["cooldownSec","repeatSec"],fields:[
+      {key:"cooldownSec",label:"冷却时间（秒）",type:"number",hint:"同一规则短时间不重复推送"},
+      {key:"repeatSec",label:"重复提醒（秒，0=不重复）",type:"number"}]},
+    {key:"notifyRecover",label:"恢复时通知",type:"switch"},
+    {key:"channels",label:"通知渠道",type:"multi",options:chOpts,hint:"不选则推送到全部已启用渠道"}
+  ];
+  const condHtml='<div class="subt">触发条件（全部满足才触发）</div><div id="condBox"></div>'+
+    '<button class="btn sm" id="addCond" type="button">+ 添加条件</button>';
+  openSheet({
+    title: id?"编辑告警规则":"新建告警规则",
+    html: buildForm(fields,values)+condHtml,
+    onReady(root){
+      bindChips(root);
+      const box=$("condBox");
+      const condState = values.conditions;
+      function draw(){
+        box.innerHTML = condState.map((c,i)=>
+          '<div class="cond-row">'+
+            '<select data-cf="'+i+'">'+RULE_FIELDS.map(f=>'<option value="'+f.value+'"'+(f.value===c.field?" selected":"")+'>'+f.label+'</option>').join("")+'</select>'+
+            '<select data-co="'+i+'">'+RULE_OPS.map(o=>'<option value="'+o.value+'"'+(o.value===c.op?" selected":"")+'>'+o.label+'</option>').join("")+'</select>'+
+            '<input data-cv="'+i+'" value="'+esc(c.value)+'" placeholder="阈值">'+
+            '<button class="btn sm danger" data-cd="'+i+'" type="button">×</button>'+
+          '</div>').join("") || '<div class="hint">尚未添加条件</div>';
+        box.querySelectorAll("[data-cf]").forEach(s=>s.onchange=()=>{ condState[+s.dataset.cf].field=s.value; });
+        box.querySelectorAll("[data-co]").forEach(s=>s.onchange=()=>{ condState[+s.dataset.co].op=s.value; });
+        box.querySelectorAll("[data-cv]").forEach(s=>s.oninput=()=>{ condState[+s.dataset.cv].value=s.value; });
+        box.querySelectorAll("[data-cd]").forEach(b=>b.onclick=()=>{ condState.splice(+b.dataset.cd,1); draw(); });
+      }
+      draw();
+      $("addCond").onclick=()=>{ condState.push({field:"loadPct",op:"ge",value:"80"}); draw(); };
+    },
+    async onSubmit(){
+      const v=collectForm(fields,values);
+      const payload={
+        name:v.name, severity:v.severity, enabled:!!v.enabled,
+        cooldownSec:Number(v.cooldownSec)||0, repeatSec:Number(v.repeatSec)||0,
+        notifyRecover:!!v.notifyRecover, channels:v.channels||[], conditions:values.conditions||[]
+      };
+      if(!payload.name){ toast("请填写规则名称"); throw new Error("缺少名称"); }
+      if(!payload.conditions.length){ toast("至少添加一个触发条件"); throw new Error("缺少条件"); }
+      if(id) await api("/api/rules/"+id,{method:"PUT",body:JSON.stringify(payload)});
+      else await api("/api/rules",{method:"POST",body:JSON.stringify(payload)});
+      closeSheet(); toast("已保存"); await refresh();
+    }
+  });
+}
+
+/* ---------------- 设备详情 ---------------- */
+function row(k,v,naText,level){
+  if(v===null||v===undefined||v==="") return '<div class="row"><div class="k">'+k+'</div><div class="v na">'+(naText||"设备不支持")+'</div></div>';
+  const cls=level==="crit"?" crit":(level==="warn"?" warn":"");
+  return '<div class="row"><div class="k">'+k+'</div><div class="v'+cls+'">'+v+'</div></div>';
+}
+function phaseTable(v,i,f,vll){
+  const hasB=!!((v&&(v.b!=null||v.c!=null))||(i&&(i.b!=null||i.c!=null)));
+  const head=hasB?["A","B","C"]:["A"];
+  const cells=(tr)=>{
+    if(!tr) return hasB?"<td>—</td><td>—</td><td>—</td>":"<td>—</td>";
+    const arr=hasB?[tr.a,tr.b,tr.c]:[tr.a];
+    return arr.map(x=>"<td>"+(x===null||x===undefined?"—":fmt(x,2))+"</td>").join("");
+  };
+  let html='<table class="ptable"><thead><tr><th>项目</th>'+head.map(h=>'<th>'+h+' 相</th>').join("")+'</tr></thead><tbody>';
+  html+='<tr><td>相电压 (V)</td>'+cells(v)+'</tr>';
+  if(vll) html+='<tr><td>线电压 (V)</td>'+cells(vll)+'</tr>';
+  if(i) html+='<tr><td>电流 (A)</td>'+cells(i)+'</tr>';
+  html+='<tr><td>频率 (Hz)</td>'+cells(f)+'</tr></tbody></table>';
+  return html;
+}
+function renderDetail(id){
+  const d=STATE.devices.find(x=>x.cfg.id===id);
+  if(!d) return;
+  const c=d.cfg;
+  $("d-title").textContent=c.name+" · "+c.host;
+  let html='<div class="kv">'+
+    row("所在场地",esc(c.site||""))+
+    row("服务商（集成商）",esc(c.integrator||""))+
+    row("上线日期",esc(c.commissionDate||""))+
+    row("出厂序列号",esc(c.serial||""))+
+    row("设备型号",esc(c.model||(d.snap?d.snap.model:"")))+
+    row("额定容量",d.snap&&d.snap.ratedKw?d.snap.ratedKw+" kW":null)+
+    row("整机供电状态",d.snap?esc(d.snap.supply.text):null)+
+    row("相数",d.snap?d.snap.phases+" 相":null)+
+    row("ECO 模式",d.snap?(d.snap.eco?"启用":"禁用"):null)+
+    row("当前告警",d.snap?d.snap.alarms.count+" 条":null)+
+    row("当前故障",d.snap?d.snap.alarms.faults+" 条":null)+
+    row("固件版本",null,"设备不支持")+
+    row("所属分组",devGroupChips(d))+
+  '</div>';
+  if(d.snap){
+    const s=d.snap;
+    const L=s.levels||{};
+    const lv=k=>(L[k]&&L[k].level)||"ok";
+    html+='<div class="subt">输入</div>'+phaseTable(s.input.v,s.input.i,s.input.f,s.input.vll);
+    html+='<div class="subt">输出</div>'+phaseTable(s.output.v,s.output.i,s.output.f,s.output.vll);
+    html+='<div class="subt">旁路</div>'+phaseTable(s.bypass.v,null,s.bypass.f,s.bypass.vll);
+    html+='<div class="subt">负载</div><div class="kv">'+
+      row("有功功率",s.load.kw&&s.load.kw.a!==null?fmt(s.load.kw.a,2)+" kW":null)+
+      row("视在功率",s.load.kva&&s.load.kva.a!==null?fmt(s.load.kva.a,2)+" kVA":null,"明细未采集")+
+      row("功率因数",s.load.pf&&s.load.pf.a!==null?fmt(s.load.pf.a,2):null)+
+      row("峰值因数",s.load.crest&&s.load.crest.a!==null?fmt(s.load.crest.a,2):null,"明细未采集")+
+      row("负载率",s.load.pct&&s.load.pct.a!==null?fmt(s.load.pct.a,1)+" %":null,null,lv("loadPercent"))+'</div>';
+    html+='<div class="subt">电池</div><div class="kv">'+
+      row("电池电压",s.battery.vP!==null?fmt(s.battery.vP,1)+" V":null)+
+      row("电池电流",s.battery.iP!==null?fmt(s.battery.iP,2)+" A":null)+
+      row("电池状态",esc(s.battery.statePText))+
+      row("剩余容量",s.battery.capPct!==null?fmt(s.battery.capPct,1)+" %":null,null,lv("batteryCapacity"))+
+      row("备电时间",s.battery.backupMin!==null?fmt(s.battery.backupMin,0)+" min":null)+
+      row("电池组数",s.battery.groups!==null?s.battery.groups+" 组":null)+
+      row("电池温度",s.battery.tempC!==null?fmt(s.battery.tempC,1)+" ℃":null,"设备不支持")+
+      row("环境温度",s.env.tempC!==null?fmt(s.env.tempC,1)+" ℃":null,"设备不支持",lv("envTemp"))+
+      row("湿度",s.battery.humiPct!==null?fmt(s.battery.humiPct,1)+" %":null,"设备不支持")+'</div>';
+    html+='<div class="subt">累计电能</div><div class="kv">'+
+      row("输入累计",s.input.energy?s.input.energy.value+" "+s.input.energy.unit:null,"未采集")+
+      row("输出累计",s.output.energy?s.output.energy.value+" "+s.output.energy.unit:null,"未采集")+'</div>';
+    // 阈值判定明细
+    html+='<div class="subt">阈值判定</div><div class="kv">'+
+      row("输出电压",s.output.v&&s.output.v.a!==null?fmt(s.output.v.a,1)+" V":null,null,lv("outputVoltage"))+
+      row("输入电压",s.input.v&&s.input.v.a!==null?fmt(s.input.v.a,1)+" V":null,null,lv("inputVoltage"))+
+      row("旁路电压",s.bypass.v&&s.bypass.v.a!==null?fmt(s.bypass.v.a,1)+" V":null,null,lv("bypassVoltage"))+
+      row("线电压(AB)",s.output.vll&&s.output.vll.a!==null?fmt(s.output.vll.a,1)+" V":null,"单相不适用",lv("lineVoltage"))+
+      row("输出电流",s.output.i&&s.output.i.a!==null?fmt(s.output.i.a,2)+" A":null,null,lv("outputCurrent"))+
+      row("输出频率",s.output.f&&s.output.f.a!==null?fmt(s.output.f.a,2)+" Hz":null,null,lv("frequency"))+
+      row("三相不平衡",s.phases>=3?(L.phaseImbalance?fmt(L.phaseImbalance.value,2)+" %":null):null,"单相不适用",lv("phaseImbalance"))+
+    '</div>';
+    const caps=s.caps;
+    const chip=(l,ok)=>'<span class="pill '+(ok?"g":"off")+'">'+l+(ok?"":" · 不支持")+'</span>';
+    html+='<div class="subt">设备能力（由设备自身返回）</div><div class="chips">'+
+      chip("环境温度",caps.envTemp)+chip("电池温度传感器",caps.batteryTemp)+
+      chip("湿度传感器",caps.humidity)+chip("电能累计",caps.energyCounter)+
+      '<span class="pill off">固件版本 · 不支持</span></div>';
+  }
+  html+='<div class="subt">通信</div><div class="kv">'+
+    row("状态",d.status==="online"?"在线":(d.status==="disabled"?"已暂停":"异常"))+
+    row("最近成功",ago(d.lastOkAt))+
+    row("单次耗时",d.snap?d.snap.pollMs+" ms":null)+
+    row("采集间隔",(c.intervalMs/1000)+" s")+
+    row("连续失败",d.failCount+" 次")+
+    (d.error?row("最近错误",esc(d.error)):"")+'</div>';
+  html+='<div style="display:flex;gap:10px;margin-top:18px">'+
+    '<button class="btn" data-edit="'+c.id+'">编辑</button>'+
+    '<button class="btn" data-atest="'+c.id+'">告警测试</button>'+
+    '<button class="btn" data-repoll="'+c.id+'">立即采集</button></div>';
+  html+='<div class="subt">历史趋势（数据永久保留）</div>'+
+    '<div class="chartbar" id="histBar">'+
+      '<button class="rng" data-range="1h">1 小时</button>'+
+      '<button class="rng" data-range="6h">6 小时</button>'+
+      '<button class="rng" data-range="24h">24 小时</button>'+
+      '<button class="rng" data-range="7d">7 天</button>'+
+      '<button class="rng" data-range="30d">30 天</button>'+
+      '<span id="histInfo" style="font-size:11.5px;color:var(--dim);margin-left:auto"></span>'+
+    '</div>'+
+    '<div class="chartwrap" id="histWrap"><div class="hist-empty" id="histMsg">加载中…</div></div>';
+  $("d-body").innerHTML=html;
+  bindHistory(id);
+}
+
+const HIST_LANES = [
+  { key:'vOut',  label:'输出电压', unit:'V',  color:'#4ea8de', d:1 },
+  { key:'vIn',   label:'输入电压', unit:'V',  color:'#9b7fd4', d:1 },
+  { key:'loadPct',label:'负载率',  unit:'%',  color:'#2fbf71', d:1 },
+  { key:'battCap',label:'电池容量',unit:'%',  color:'#e8a33d', d:1 },
+  { key:'envTemp',label:'环境温度',unit:'℃',  color:'#e2564d', d:1 }
+];
+
+function bindHistory(id){
+  const bar=$("histBar");
+  if(!bar) return;
+  bar.querySelectorAll(".rng").forEach(b=>{
+    b.onclick=()=>{ loadHistory(id, b.dataset.range); };
+  });
+  loadHistory(id, (window._histRange||"1h"));
+}
+
+async function loadHistory(id, range){
+  window._histRange = range;
+  const bar=$("histBar");
+  if(bar) bar.querySelectorAll(".rng").forEach(b=>b.classList.toggle("on", b.dataset.range===range));
+  const wrap=$("histWrap");
+  if(!wrap) return;
+  const msg=$("histMsg");
+  try{
+    const j=await api("/api/history/"+id+"?range="+encodeURIComponent(range)+"&points=600");
+    const rows=j.history||[];
+    const info=$("histInfo");
+    if(info) info.textContent = rows.length
+      ? (rows.length+" 个采样点 · "+dt(rows[0].ts)+" → "+dt(rows[rows.length-1].ts))
+      : "该时段暂无数据";
+    if(!rows.length){
+      wrap.innerHTML='<div class="hist-empty" id="histMsg">该时段暂无历史数据</div>';
+      return;
+    }
+    drawHistoryChart(wrap, rows);
+  }catch(e){
+    wrap.innerHTML='<div class="hist-empty" id="histMsg">历史数据加载失败：'+esc(e.message)+'</div>';
+  }
+}
+
+function drawHistoryChart(wrap, rows){
+  const W=900, PADL=62, PADR=14, LANEH=62, GAP=16, TOP=8, AXIS=26;
+  const H = TOP + HIST_LANES.length*(LANEH+GAP) + AXIS;
+  const n=rows.length;
+  const t0=rows[0].ts, t1=rows[n-1].ts||t0+1;
+  const plotW = W-PADL-PADR;
+  const xAt=(i)=> PADL + (n===1?plotW/2:(i/(n-1))*plotW);
+
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="height:'+H+'px">';
+  // 时间轴刻度
+  for(let g=0;g<=4;g++){
+    const x=PADL+plotW*g/4;
+    const t=t0+(t1-t0)*g/4;
+    svg+='<line x1="'+x.toFixed(1)+'" y1="'+TOP+'" x2="'+x.toFixed(1)+'" y2="'+(H-AXIS)+'" stroke="#1a222c" stroke-width="1"/>';
+    const d=new Date(t), p=v=>String(v).padStart(2,"0");
+    const label = (t1-t0) > 3*24*3600e3
+      ? (d.getMonth()+1)+"/"+d.getDate()
+      : p(d.getHours())+":"+p(d.getMinutes());
+    svg+='<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" fill="#5d6b7a" font-size="11" text-anchor="'+(g===0?"start":g===4?"end":"middle")+'">'+label+'</text>';
+  }
+
+  HIST_LANES.forEach((lane,li)=>{
+    const y0=TOP+li*(LANEH+GAP);
+    const vals=rows.map(r=>r[lane.key]).filter(v=>v!==null&&v!==undefined&&v!==''&&!Number.isNaN(Number(v))).map(Number);
+    svg+='<rect x="'+PADL+'" y="'+y0+'" width="'+plotW+'" height="'+LANEH+'" fill="#0e151d" stroke="#182029"/>';
+    svg+='<text x="'+(PADL-8)+'" y="'+(y0+14)+'" fill="#8fa3b4" font-size="11" text-anchor="end">'+lane.label+'</text>';
+    if(!vals.length){
+      svg+='<text x="'+(PADL+plotW/2)+'" y="'+(y0+LANEH/2+4)+'" fill="#4d5b69" font-size="11" text-anchor="middle">无数据</text>';
+      return;
+    }
+    let mn=Math.min(...vals), mx=Math.max(...vals);
+    if(mx-mn<0.0001){ mn-=1; mx+=1; }
+    const pad=(mx-mn)*0.15; mn-=pad; mx+=pad;
+    const yAt=(v)=> y0+LANEH-((v-mn)/(mx-mn))*(LANEH-8)-4;
+    // 参考线
+    [0,0.5,1].forEach(f=>{
+      const y=y0+LANEH- f*(LANEH-8)-4;
+      svg+='<line x1="'+PADL+'" y1="'+y.toFixed(1)+'" x2="'+(PADL+plotW)+'" y2="'+y.toFixed(1)+'" stroke="#161e27" stroke-width="1"/>';
+    });
+    let d="",started=false;
+    rows.forEach((r,i)=>{
+      const v=r[lane.key];
+      if(v===null||v===undefined||v==="") return;
+      const x=xAt(i), y=yAt(Number(v));
+      d+=(started?"L":"M")+x.toFixed(1)+" "+y.toFixed(1)+" ";
+      started=true;
+    });
+    svg+='<path d="'+d+'" fill="none" stroke="'+lane.color+'" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+    svg+='<text x="'+(PADL-8)+'" y="'+(y0+27)+'" fill="#4d5b69" font-size="10" text-anchor="end">'+fmt(mn,lane.d)+'</text>';
+    svg+='<text x="'+(PADL-8)+'" y="'+(y0+LANEH-3)+'" fill="#4d5b69" font-size="10" text-anchor="end">'+fmt(mx,lane.d)+'</text>';
+    svg+='<text x="'+(PADL+4)+'" y="'+(y0+12)+'" fill="'+lane.color+'" font-size="10" opacity="0.85">'+lane.unit+'</text>';
+  });
+
+  // 十字线层
+  svg+='<g id="hcross" style="display:none">'+
+    '<line id="hcLine" x1="0" y1="'+TOP+'" x2="0" y2="'+(H-AXIS)+'" stroke="#7d8b99" stroke-width="1" stroke-dasharray="3 3"/>'+
+    '</g>';
+  svg+='<rect id="hcHit" x="'+PADL+'" y="'+TOP+'" width="'+plotW+'" height="'+(H-AXIS-TOP)+'" fill="transparent" style="cursor:crosshair"/>';
+  svg+='</svg>';
+  wrap.innerHTML=svg+'<div class="c-tip" id="hTip"></div>';
+  bindCrosshair(wrap, rows, xAt, yAtOf(rows), PADL, plotW);
+}
+
+function yAtOf(rows){
+  return (laneIdx, v)=>{
+    const lane=HIST_LANES[laneIdx];
+    const vals=rows.map(r=>r[lane.key]).filter(x=>x!==null&&x!==undefined&&x!==''&&!Number.isNaN(Number(x))).map(Number);
+    if(!vals.length) return null;
+    let mn=Math.min(...vals), mx=Math.max(...vals);
+    if(mx-mn<0.0001){ mn-=1; mx+=1; }
+    const pad=(mx-mn)*0.15; mn-=pad; mx+=pad;
+    const LANEH=62, GAP=16, TOP=8;
+    const y0=TOP+laneIdx*(LANEH+GAP);
+    return y0+LANEH-((v-mn)/(mx-mn))*(LANEH-8)-4;
+  };
+}
+
+function bindCrosshair(wrap, rows, xAt, yFn, PADL, plotW){
+  const svg=wrap.querySelector("svg");
+  const hit=wrap.querySelector("#hcHit");
+  const cross=wrap.querySelector("#hcross");
+  const line=wrap.querySelector("#hcLine");
+  const tip=wrap.querySelector("#hTip");
+  if(!hit) return;
+  const markers=[];
+  HIST_LANES.forEach((lane,li)=>{
+    const c=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("r","3.2"); c.setAttribute("fill",lane.color);
+    c.setAttribute("stroke","#0c1219"); c.setAttribute("stroke-width","1.5");
+    c.style.display="none";
+    cross.appendChild(c); markers.push(c);
+  });
+  function move(evt){
+    const r=svg.getBoundingClientRect();
+    const vb=svg.viewBox.baseVal;
+    const scale=r.width/vb.width;
+    const px=(evt.clientX-r.left)/scale;
+    let idx=0, best=1e18;
+    for(let i=0;i<rows.length;i++){
+      const d=Math.abs(xAt(i)-px);
+      if(d<best){ best=d; idx=i; }
+    }
+    const x=xAt(idx);
+    cross.style.display="";
+    line.setAttribute("x1",x); line.setAttribute("x2",x);
+    const row=rows[idx];
+    let html='<div class="tt">'+dt(row.ts)+'</div>';
+    HIST_LANES.forEach((lane,li)=>{
+      const v=row[lane.key];
+      const y=(v===null||v===undefined||v==='')?null:yFn(li,Number(v));
+      if(y===null){ markers[li].style.display="none"; return; }
+      markers[li].style.display="";
+      markers[li].setAttribute("cx",x); markers[li].setAttribute("cy",y);
+      html+='<div class="tr"><span class="tc" style="background:'+lane.color+'"></span>'+
+        '<span class="tn">'+lane.label+'</span>'+
+        '<span class="tv">'+(v===null||v===undefined?"—":fmt(v,lane.d)+" "+lane.unit)+'</span></div>';
+    });
+    tip.innerHTML=html;
+    tip.style.display="block";
+    const wrapRect=wrap.getBoundingClientRect();
+    const svgRect=svg.getBoundingClientRect();
+    const left=(svgRect.left-wrapRect.left)+(x*scale)-70;
+    tip.style.left=Math.max(4, Math.min(wrapRect.width-150, left))+"px";
+    tip.style.top="12px";
+  }
+  hit.addEventListener("mousemove",move);
+  hit.addEventListener("mouseleave",()=>{ cross.style.display="none"; tip.style.display="none"; });
+}
+
+/* ---------------- 刷新与渲染 ---------------- */
+async function refresh(){
+  // 拖动进行中：跳过本次重绘，否则 innerHTML 重建会把正在拖的元素从 DOM 移除，拖动直接断掉
+  if(DRAG) return;
+  try{
+    const gb=$("groupBy").value;
+    const [st,se]=await Promise.all([api("/api/state"+(gb?"?groupBy="+encodeURIComponent(gb):"")),
+                                     api("/api/settings")]);
+    if(DRAG) return;   // 请求期间开始了拖动 → 放弃这次渲染，避免打断拖动
+    STATE=st; SETTINGS=se;
+    renderGroupSelect();
+    renderFilters();
+    $("k-total").textContent=STATE.devices.length;
+    let on=0,w=0,cr=0;
+    STATE.devices.forEach(d=>{ if(d.status==="online")on++; if(d.snap&&d.snap.severity.level==="warn")w++; if(d.snap&&d.snap.severity.level==="crit")cr++; });
+    $("k-online").textContent=on; $("k-warn").textContent=w; $("k-crit").textContent=cr;
+    if(VIEW==="dash") renderDash();
+    if(VIEW==="devices") renderDevices();
+    if(VIEW==="groups") renderGroups();
+    if(VIEW==="templates") renderTemplates();
+    if(VIEW==="alerts"){ renderThresholds(); renderAlerts(); }
+    if(VIEW==="system") renderSystem();
+    if(detailId) renderDetail(detailId);
+  }catch(e){ toast("刷新失败："+e.message); }
+}
+function renderGroupSelect(){
+  const sel=$("groupBy");
+  const cur=sel.value||(STATE.ui&&STATE.ui.groupBy)||"none";
+  sel.innerHTML=(STATE.groupOptions||[]).map(o=>'<option value="'+esc(o.id)+'">'+esc(o.name)+'</option>').join("");
+  sel.value=cur;
+  syncViewTabs();
+}
+function syncViewTabs(){
+  const vm=(STATE.ui&&STATE.ui.viewMode)||"tiles";
+  document.querySelectorAll("#viewTabs .vt").forEach(b=>b.classList.toggle("on", b.dataset.vm===vm));
+}
+function renderFilters(){
+  const fg=$("devFilterGroup");
+  const cur=fg.value;
+  fg.innerHTML='<option value="">全部分组</option>'+(STATE.groups||[]).map(g=>'<option value="'+esc(g.id)+'">'+esc(g.name)+'</option>').join("");
+  fg.value=cur;
+  const bg=$("batchGroup");
+  const bcur=bg.value;
+  bg.innerHTML='<option value="">选择目标分组…</option>'+(STATE.groups||[]).filter(g=>g.type==="custom").map(g=>'<option value="'+esc(g.id)+'">'+esc(g.name)+'</option>').join("");
+  bg.value=bcur;
+}
+
+/* ---------------- 事件绑定 ---------------- */
+$("tabs").addEventListener("click", e=>{
+  const t=e.target.closest(".tab"); if(!t) return;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+  VIEW=t.dataset.view;
+  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on", v.id==="v-"+VIEW));
+  refresh();
+});
+$("btn-refresh").onclick=async()=>{ await refresh(); toast("已刷新"); };
+$("onlyAlert").onchange=()=>{ onlyAlert=$("onlyAlert").checked; renderDash(); };
+$("compactList").onchange=()=>{ compactList=$("compactList").checked; renderDash(); };
+$("viewTabs").addEventListener("click", async e=>{
+  const b=e.target.closest(".vt"); if(!b) return;
+  const vm=b.dataset.vm;
+  await api("/api/settings/ui",{method:"PUT",body:JSON.stringify({viewMode:vm})});
+  STATE.ui=Object.assign({},STATE.ui,{viewMode:vm});
+  syncViewTabs();
+  renderDash();
+});
+$("btn-add").onclick=()=>openDeviceForm(null);
+$("groupBy").onchange=async()=>{ await api("/api/settings/ui",{method:"PUT",body:JSON.stringify({groupBy:$("groupBy").value})}); refresh(); };
+$("devSearch").oninput=()=>renderDevices();
+$("devFilterGroup").onchange=()=>renderDevices();
+$("devFilterStatus").onchange=()=>renderDevices();
+$("devCheckAll").onchange=()=>{
+  const rows=STATE.devices.filter(matchDevice);
+  rows.forEach(d=>{ if($("devCheckAll").checked) devSelected.add(d.cfg.id); else devSelected.delete(d.cfg.id); });
+  renderDevices();
+};
+$("btnBatchGroup").onclick=async()=>{
+  const g=$("batchGroup").value;
+  if(!g){ toast("请选择目标分组"); return; }
+  if(!devSelected.size){ toast("请先勾选设备"); return; }
+  await api("/api/devices/batch",{method:"POST",body:JSON.stringify({action:"group",ids:Array.from(devSelected),groupIds:[g]})});
+  toast("已归组"); refresh();
+};
+$("btnBatchEnable").onclick=async()=>{ if(!devSelected.size)return toast("请先勾选设备");
+  await api("/api/devices/batch",{method:"POST",body:JSON.stringify({action:"enable",ids:Array.from(devSelected)})}); toast("已启用"); refresh(); };
+$("btnBatchDisable").onclick=async()=>{ if(!devSelected.size)return toast("请先勾选设备");
+  await api("/api/devices/batch",{method:"POST",body:JSON.stringify({action:"disable",ids:Array.from(devSelected)})}); toast("已暂停"); refresh(); };
+$("btnBatchDelete").onclick=async()=>{
+  if(!devSelected.size) return toast("请先勾选设备");
+  if(!confirm("确认删除选中的 "+devSelected.size+" 台设备？")) return;
+  await api("/api/devices/batch",{method:"POST",body:JSON.stringify({action:"delete",ids:Array.from(devSelected)})});
+  devSelected.clear(); toast("已删除"); refresh();
+};
+$("btnAddGroup").onclick=()=>openGroupForm(null);
+$("btnAddTemplate").onclick=()=>openTemplateForm(null);
+$("btnAddChannel").onclick=()=>openChannelForm(null);
+$("btnAddRule").onclick=()=>openRuleForm(null);
+
+document.addEventListener("click", async ev=>{
+  const t=ev.target;
+  if(t.dataset&&t.dataset.close){ $(t.dataset.close).classList.remove("on"); if(t.dataset.close==="mask-detail") detailId=null; return; }
+  // 看板卡片 / 磁贴：点击打开详情
+  // 注意：t.dataset 对无 data-* 元素也是空对象（truthy），必须用 closest 匹配
+  const tileOrCard = t.closest ? t.closest(".card, .tile") : null;
+  if(tileOrCard && VIEW==="dash"){
+    detailId=tileOrCard.dataset.id;
+    renderDetail(detailId);
+    $("mask-detail").classList.add("on");
+    return;
+  }
+  if(t.classList&&t.classList.contains("devchk")){
+    if(t.checked) devSelected.add(t.dataset.id); else devSelected.delete(t.dataset.id);
+    renderDevices(); return;
+  }
+  if(!t.dataset) {
+    const card=t.closest?t.closest(".card"):null;
+    const tile=t.closest?t.closest(".tile"):null;
+    const hit=card||tile;
+    if(hit && VIEW==="dash"){ detailId=hit.dataset.id; renderDetail(detailId); $("mask-detail").classList.add("on"); }
+    return;
+  }
+  if(t.dataset.edit){ openDeviceForm(t.dataset.edit); return; }
+  if(t.dataset.move){ await moveDevice(t.dataset.move, Number(t.dataset.dir)||1); return; }
+  if(t.dataset.detail){ detailId=t.dataset.detail; renderDetail(detailId); $("mask-detail").classList.add("on"); return; }
+  if(t.dataset.repoll){ await api("/api/devices/"+t.dataset.repoll+"/poll",{method:"POST"}); toast("已触发采集"); return; }
+  if(t.dataset.atest){
+    const r=await api("/api/devices/"+t.dataset.atest+"/alert-test",{method:"POST"});
+    toast(r.ok?"告警测试已推送":(r.msg||"未触发"));
+    refresh(); return;
+  }
+  if(t.dataset.del){
+    if(!confirm("确认删除该设备？历史数据会一并清除。")) return;
+    await api("/api/devices/"+t.dataset.del,{method:"DELETE"});
+    detailId=null; $("mask-detail").classList.remove("on");
+    toast("已删除"); refresh(); return;
+  }
+  if(t.dataset.gedit){ openGroupForm(t.dataset.gedit); return; }
+  if(t.dataset.gdel){
+    if(!confirm("确认删除该分组？设备会从分组中移除。")) return;
+    await api("/api/groups/"+t.dataset.gdel,{method:"DELETE"}); toast("已删除"); refresh(); return;
+  }
+  if(t.dataset.tedit){ openTemplateForm(t.dataset.tedit); return; }
+  if(t.dataset.tdel){
+    if(!confirm("确认删除该模板？")) return;
+    await api("/api/templates/"+t.dataset.tdel,{method:"DELETE"}); toast("已删除"); refresh(); return;
+  }
+  if(t.dataset.cedit){ openChannelForm(t.dataset.cedit); return; }
+  if(t.dataset.cdel){
+    if(!confirm("确认删除该渠道？引用它的规则会改为走全部渠道。")) return;
+    await api("/api/channels/"+t.dataset.cdel,{method:"DELETE"}); toast("已删除"); refresh(); return;
+  }
+  if(t.dataset.ctest){
+    const r=await api("/api/channels/"+t.dataset.ctest+"/test",{method:"POST"});
+    toast(r.ok?"测试消息已发送":("测试失败："+r.error)); refresh(); return;
+  }
+  if(t.dataset.redit){ openRuleForm(t.dataset.redit); return; }
+  if(t.dataset.rdel){
+    if(!confirm("确认删除该规则？")) return;
+    await api("/api/rules/"+t.dataset.rdel,{method:"DELETE"}); toast("已删除"); refresh(); return;
+  }
+});
+document.querySelectorAll("#mask-detail").forEach(m=>{
+  m.addEventListener("click",e=>{ if(e.target===m){ m.classList.remove("on"); detailId=null; } });
+});
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ $("mask").classList.remove("on"); $("mask-detail").classList.remove("on"); detailId=null; } });
+
+function loop(){ clearTimeout(loopTimer); loopTimer=setTimeout(async()=>{ await refresh(); loop(); }, 5000); }
+refresh().then(loop);
+</script>
+</body>
+</html>

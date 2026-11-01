@@ -1,0 +1,29 @@
+{
+  "name": "ups-monitor",
+  "version": "1.0.0",
+  "description": "Vertiv ITA2 UPS 监控系统 —— 直接轮询 UPS 内建 Web 的 JSON 接口，绕开 SNMP，零第三方依赖",
+  "main": "upsmon/server.js",
+  "scripts": {
+    "start": "node upsmon/server.js",
+    "start:minimal": "node upsmon-v1-minimal/server.js",
+    "make-test-devices": "node upsmon/tools/make-test-devices.js"
+  },
+  "keywords": [
+    "ups",
+    "vertiv",
+    "ita2",
+    "liebert",
+    "monitoring",
+    "dcim",
+    "cmdb",
+    "alerting"
+  ],
+  "author": "",
+  "license": "MIT",
+  "private": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

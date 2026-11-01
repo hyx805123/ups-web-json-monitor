@@ -1,0 +1,43 @@
+# ===== 运行时数据（含设备密码、企微 webhook、SMTP 口令、采集历史）=====
+# 绝不提交。首次使用请复制示例文件：
+#   upsmon/data/devices.example.json  ->  upsmon/data/devices.json
+upsmon/data/*
+upsmon-v1-minimal/data/*
+!upsmon/data/devices.example.json
+*.log
+*.jsonl
+
+# ===== 本地开发笔记 / 压测产物 =====
+.workbuddy/
+.shotdata/
+.testdata/
+shots_log.txt
+git_prep.txt
+git_status.txt
+probe/
+
+# ===== 厂商设备模板与第三方商业软件（版权及体积原因不入库）=====
+ita2_extract/
+ita_extract/
+power-insight-*.zip
+power-insight-*.pdf
+install-power-insight.bat
+home_index.html
+
+# ===== 历史项目遗留的诊断输出 =====
+*.details
+*.notes
+backup/
+power-insight-extract/
+home.html
+home.json
+index.js
+index_full.js
+/*.txt
+
+# ===== Node =====
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db

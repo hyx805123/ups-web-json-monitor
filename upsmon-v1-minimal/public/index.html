@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPS 监控台（最简版）</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111820'/%3E%3Cpath d='M17 4 8 18h6l-1 10 9-14h-6z' fill='%232fbf71'/%3E%3C/svg%3E">
+<style>
+  :root{--bg:#0a0e13;--panel:#111820;--line:#1d2732;--line2:#26323f;--text:#e6edf3;--muted:#78899a;--dim:#4d5b69;--ok:#2fbf71;--warn:#e8a33d;--crit:#e2564d;--info:#4ea8de}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:radial-gradient(1200px 600px at 20% -10%,#12202c 0%,transparent 60%),var(--bg);color:var(--text);
+    font:14px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-variant-numeric:tabular-nums}
+  button{font-family:inherit;cursor:pointer}
+  .top{display:flex;align-items:center;gap:14px;padding:0 20px;height:54px;border-bottom:1px solid var(--line);background:rgba(12,17,23,.9);position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:600}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
+  .brand small{color:var(--muted);font-weight:400;font-size:11.5px}
+  .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .kpi{display:flex;align-items:baseline;gap:5px;padding:4px 11px;border:1px solid var(--line2);border-radius:999px;background:#0e141b;font-size:11.5px;color:var(--muted)}
+  .kpi b{font-size:14px;color:var(--text)}
+  .btn{padding:6px 12px;border-radius:7px;border:1px solid var(--line2);background:var(--panel);color:var(--text);font-size:12.5px}
+  .btn:hover{background:#1a2430;border-color:#31414f}
+  .btn.primary{background:#17405c;border-color:#215a80;color:#d7ecfb}
+  .btn.danger{color:#f0a7a2;border-color:rgba(226,86,77,.4)}
+  .btn.sm{padding:3px 8px;font-size:11.5px;border-radius:5px}
+  .wrap{padding:18px 20px 40px;max-width:1720px;margin:0 auto}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:15px}
+  .card{background:linear-gradient(180deg,#121a23,#0f151d);border:1px solid var(--line);border-radius:10px;padding:15px 15px 11px;position:relative;overflow:hidden;cursor:pointer;transition:.18s}
+  .card:hover{border-color:#2d3d4d;transform:translateY(-1px)}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
+  .card.ok::before{background:var(--ok)}.card.warn::before{background:var(--warn)}.card.crit::before{background:var(--crit)}.card.off::before{background:#3a4653}
+  .chead{display:flex;align-items:flex-start;gap:10px;margin-bottom:13px}
+  .cname{font-size:15px;font-weight:600}.caddr{font-size:11.5px;color:var(--muted);margin-top:2px;font-family:ui-monospace,Consolas,monospace}
+  .badge{margin-left:auto;flex:none;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid transparent}
+  .badge.ok{color:#7ee2a8;background:rgba(47,191,113,.12);border-color:rgba(47,191,113,.35)}
+  .badge.warn{color:#f0c27a;background:rgba(232,163,61,.12);border-color:rgba(232,163,61,.35)}
+  .badge.crit{color:#f39b95;background:rgba(226,86,77,.13);border-color:rgba(226,86,77,.38)}
+  .badge.off{color:#94a3b1;background:rgba(120,137,154,.1);border-color:rgba(120,137,154,.28)}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px 8px;margin-bottom:11px}
+  .m .k{font-size:11px;color:var(--muted)}.m .v{font-size:19px;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
+  .m .v span{font-size:11px;color:var(--muted);font-weight:400;margin-left:2px}
+  .m .v.na{font-size:12px;color:var(--dim);font-weight:400}
+  .spark{height:30px;margin:0 0 8px;display:block;width:100%}
+  .issues{display:flex;flex-direction:column;gap:3px;margin-bottom:7px}
+  .issue{font-size:12px;color:#f0c27a;display:flex;gap:6px}.issue.crit{color:#f39b95}
+  .issue::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor;margin-top:6px;flex:none}
+  .cfoot{display:flex;gap:8px;font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:8px}
+  .cfoot .mini{margin-left:auto}
+  .section-title{display:flex;align-items:center;gap:10px;margin:26px 0 11px;font-size:12.5px;color:var(--muted)}
+  .section-title::after{content:"";flex:1;height:1px;background:var(--line)}
+  .events{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .ev{display:flex;gap:11px;padding:8px 14px;font-size:12.5px;border-bottom:1px solid #151d26}
+  .ev .t{color:var(--dim);font-family:ui-monospace,Consolas,monospace}.ev .lv{width:6px;height:6px;border-radius:50%;margin-top:7px;flex:none}
+  .ev.ok .lv{background:var(--ok)}.ev.warn .lv{background:var(--warn)}.ev.crit .lv{background:var(--crit)}
+  .ev .msg{color:#c3d0dc}
+  .empty{padding:26px;text-align:center;color:var(--dim);font-size:13px}
+  .mask{position:fixed;inset:0;background:rgba(4,7,10,.74);display:none;z-index:50;overflow:auto;padding:4vh 0}
+  .mask.on{display:block}
+  .sheet{max-width:520px;margin:0 auto;background:#0f151d;border:1px solid var(--line2);border-radius:14px;overflow:hidden}
+  .shead{display:flex;align-items:center;padding:15px 20px;border-bottom:1px solid var(--line)}
+  .shead h2{font-size:15.5px;font-weight:600}.shead .x{margin-left:auto;background:none;border:0;color:var(--muted);font-size:20px}
+  .sbody{padding:18px 20px}
+  .sfoot{padding:13px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+  label.f{display:block;margin-bottom:13px}label.f .lbl{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+  input.f{width:100%;padding:8px 11px;border-radius:7px;border:1px solid var(--line2);background:#0b1016;color:var(--text);font-size:13px;outline:none}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+  .hint{font-size:11.5px;color:var(--dim);margin-top:5px}
+  .testout{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12.5px;border:1px solid var(--line2);background:#0b1016;display:none}
+  .testout.on{display:block}.testout.ok{border-color:rgba(47,191,113,.35);color:#9fe0ba}.testout.bad{border-color:rgba(226,86,77,.35);color:#f0a7a2}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1a2431;border:1px solid var(--line2);
+    color:var(--text);padding:10px 18px;border-radius:9px;font-size:13px;opacity:0;pointer-events:none;transition:.22s;z-index:80}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><span class="dot"></span>UPS 监控台 <small>最简版 · Vertiv ITA2 Web JSON</small></div>
+  <div class="right">
+    <div class="kpi">设备 <b id="k-total">0</b></div>
+    <div class="kpi">在线 <b id="k-online">0</b></div>
+    <button class="btn" id="btn-refresh">刷新</button>
+    <button class="btn primary" id="btn-add">+ 添加 UPS</button>
+  </div>
+</div>
+<div class="wrap">
+  <div class="grid" id="grid"></div>
+  <div class="section-title">事件记录</div>
+  <div class="events" id="events"><div class="empty">暂无事件</div></div>
+</div>
+<div class="mask" id="mask-add">
+  <div class="sheet">
+    <div class="shead"><h2>添加 UPS</h2><button class="x" id="mask-x">×</button></div>
+    <div class="sbody">
+      <label class="f"><span class="lbl">名称</span><input class="f" id="f-name" placeholder="例如：武汉仓库-1F-UPS01"></label>
+      <div class="row2">
+        <label class="f"><span class="lbl">IP 地址</span><input class="f" id="f-host" placeholder="10.204.130.240"></label>
+        <label class="f"><span class="lbl">端口</span><input class="f" id="f-port" value="80"></label>
+      </div>
+      <div class="row2">
+        <label class="f"><span class="lbl">网页账号</span><input class="f" id="f-user" value="user"></label>
+        <label class="f"><span class="lbl">网页密码</span><input class="f" id="f-pass" type="password"></label>
+      </div>
+      <label class="f"><span class="lbl">采集间隔（秒）</span><input class="f" id="f-int" value="10"></label>
+      <div class="hint">只需填 IP、账号、密码；枚举含义由设备自身返回。</div>
+      <div class="testout" id="f-test"></div>
+    </div>
+    <div class="sfoot">
+      <button class="btn" id="f-cancel">取消</button>
+      <button class="btn" id="f-test-btn">测试连接</button>
+      <button class="btn primary" id="f-save">保存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let STATE={devices:[],events:[]};
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),2200);}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function fmt(v,d){if(v==null||v==="")return null;const n=Number(v);return isFinite(n)?n.toFixed(d===undefined?1:d):null;}
+function ago(ts){if(!ts)return"—";const s=Math.floor((Date.now()-ts)/1000);if(s<5)return"刚刚";if(s<60)return s+" 秒前";if(s<3600)return Math.floor(s/60)+" 分钟前";return Math.floor(s/3600)+" 小时前";}
+function clock(ts){const d=new Date(ts),p=x=>String(x).padStart(2,"0");return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());}
+async function api(u,o){const r=await fetch(u,Object.assign({headers:{"Content-Type":"application/json"}},o||{}));let j=null;try{j=await r.json();}catch(_){}if(!r.ok)throw new Error((j&&j.error)||("HTTP "+r.status));return j;}
+function spark(points,color){
+  const W=320,H=30,vals=points.filter(v=>v!=null);
+  if(vals.length<2)return '<svg class="spark" viewBox="0 0 '+W+' '+H+'"></svg>';
+  let mn=Math.min(...vals),mx=Math.max(...vals);if(mx-mn<0.001)mx=mn+1;
+  const pad=(mx-mn)*0.12;mn-=pad;mx+=pad;const st=W/(points.length-1);
+  let d="",started=false;
+  points.forEach((v,i)=>{if(v==null)return;const x=i*st,y=H-((v-mn)/(mx-mn))*(H-4)-2;d+=(started?"L":"M")+x.toFixed(1)+" "+y.toFixed(1)+" ";started=true;});
+  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+}
+function metric(k,v,u){return '<div class="m"><div class="k">'+k+'</div><div class="v">'+(v==null?'<span class="na">设备不支持</span>':v+(u?'<span>'+u+'</span>':''))+'</div></div>';}
+async function render(){
+  STATE=await api("/api/state");
+  $("k-total").textContent=STATE.devices.length;
+  $("k-online").textContent=STATE.devices.filter(d=>d.status==="online").length;
+  const hists=await Promise.all(STATE.devices.map(d=>fetch("/api/history/"+d.cfg.id+"?limit=120").then(r=>r.json()).then(j=>j.history||[]).catch(()=>[])));
+  $("grid").innerHTML=STATE.devices.length?STATE.devices.map((d,i)=>{
+    const s=d.snap;
+    const cls=!s||d.status==="offline"||d.status==="degraded"?"off":s.severity.level;
+    const bd=!s?"离线":s.supply.text;
+    const bc=!s?"off":s.severity.level;
+    const load=s&&s.load.pct?s.load.pct.a:null;
+    const lc=load==null?"#4ea8de":(load>=90?"#e2564d":load>=75?"#e8a33d":"#2fbf71");
+    const m=s?(metric("输入电压",fmt(s.input.v.a,1),"V")+metric("输出电压",fmt(s.output.v.a,1),"V")+metric("负载率",fmt(load,1),"%")+
+      metric("输出电流",fmt(s.output.i.a,2),"A")+metric("电池容量",fmt(s.battery.capPct,0),"%")+metric("备电时间",fmt(s.battery.backupMin,0),"min")):
+      (metric("输入电压",null)+metric("输出电压",null)+metric("负载率",null)+metric("输出电流",null)+metric("电池容量",null)+metric("备电时间",null));
+    const iss=s&&s.severity.issues.length?'<div class="issues">'+s.severity.issues.slice(0,2).map(x=>'<div class="issue '+x.lvl+'">'+esc(x.msg)+'</div>').join("")+'</div>':"";
+    const foot=s?((s.caps.envTemp&&s.env.tempC!=null?'环境 '+fmt(s.env.tempC,1)+'℃':'环境温度 设备不支持')+' · 电池 '+esc(s.battery.statePText)+' · 告警 '+s.alarms.count+' / 故障 '+s.alarms.faults):(d.error||"正在建立会话…");
+    return '<div class="card '+cls+'" data-id="'+d.cfg.id+'"><div class="chead"><div><div class="cname">'+esc(d.cfg.name)+
+      '</div><div class="caddr">'+esc(d.cfg.host)+'</div></div><div class="badge '+bc+'">'+esc(bd)+'</div></div>'+
+      '<div class="metrics">'+m+'</div>'+(s?spark(hists[i].map(h=>h.vOut).slice(-120),"#4ea8de")+spark(hists[i].map(h=>h.loadPct).slice(-120),lc):"")+iss+
+      '<div class="cfoot"><span>'+esc(foot)+'</span><span class="mini">'+(d.lastOkAt?ago(d.lastOkAt):"—")+'</span></div></div>';
+  }).join(""):'<div class="empty" style="grid-column:1/-1;padding:50px 0">还没有设备，点右上角「+ 添加 UPS」录入 IP 与网页账号密码。</div>';
+  const evs=STATE.events||[];
+  $("events").innerHTML=evs.length?evs.slice(0,30).map(e=>'<div class="ev '+e.level+'"><span class="t">'+clock(e.ts)+'</span><span class="lv"></span><span class="msg">'+esc(e.msg)+'</span></div>').join(""):'<div class="empty">暂无事件</div>';
+}
+$("btn-refresh").onclick=async()=>{await render();toast("已刷新");};
+$("btn-add").onclick=()=>{$("mask-add").classList.add("on");};
+$("mask-x").onclick=$("f-cancel").onclick=()=>$("mask-add").classList.remove("on");
+$("f-test-btn").onclick=async()=>{
+  const box=$("f-test");box.className="testout on";box.textContent="正在登录设备…";
+  try{
+    const j=await api("/api/test",{method:"POST",body:JSON.stringify({host:$("f-host").value.trim(),port:Number($("f-port").value)||80,username:$("f-user").value,password:$("f-pass").value})});
+    if(j.ok){const s=j.snap;box.className="testout on ok";box.innerHTML="连接成功<br>供电状态："+esc(s.supply.text)+" · 负载 "+fmt(s.load.pct.a,1)+"%<br>输出 "+fmt(s.output.v.a,1)+" V · 机型 "+esc(s.model);}
+    else{box.className="testout on bad";box.textContent="失败："+j.error;}
+  }catch(e){box.className="testout on bad";box.textContent="请求失败："+e.message;}
+};
+$("f-save").onclick=async()=>{
+  const host=$("f-host").value.trim();
+  if(!host){toast("请填写 IP 地址");return;}
+  if(!$("f-pass").value){toast("请填写网页密码");return;}
+  try{
+    await api("/api/devices",{method:"POST",body:JSON.stringify({
+      name:$("f-name").value.trim()||host,host:host,port:Number($("f-port").value)||80,
+      username:$("f-user").value,password:$("f-pass").value,intervalMs:(Number($("f-int").value)||10)*1000,enabled:true})});
+    $("mask-add").classList.remove("on");toast("已添加");await render();
+  }catch(e){toast(e.message);}
+};
+document.addEventListener("click",async ev=>{
+  const c=ev.target.closest?ev.target.closest(".card"):null;
+  if(c&&confirm("确认删除设备「"+STATE.devices.find(d=>d.cfg.id===c.dataset.id).cfg.name+"」？")){
+    await api("/api/devices/"+c.dataset.id,{method:"DELETE"});toast("已删除");render();
+  }
+});
+(async()=>{await render();setInterval(render,5000);})();
+</script>
+</body>
+</html>
