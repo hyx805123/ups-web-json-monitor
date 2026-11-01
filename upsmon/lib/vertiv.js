@@ -8,6 +8,7 @@
 //   /_com/status/bypass.json  旁路
 //   /_com/status/battery.json 电池组数、柜温、温湿度传感器是否存在
 //   /_com/_infor/infor.json   设备 IP 与 UPS 时间
+const net = require('net');
 const { request } = require('./http10');
 
 const ENUM = {
@@ -21,15 +22,76 @@ const ENUM = {
 const SUPPLY_LEVEL = { 0: 'crit', 1: 'warn', 2: 'ok', 3: 'warn' };
 const BATT_LEVEL = { 0: 'crit', 1: 'ok', 2: 'ok', 3: 'warn', 4: 'ok', 5: 'ok', 6: 'warn' };
 
+// 判断是不是"本机到该内网段没有路径"——通常意味着 VPN / 零信任隧道掉了，
+// 而不是设备本身坏了。区分开能让用户一眼看出该去连 VPN 还是去查设备。
+//
+// 判定方式：读本机 IPv4 路由表，找出能匹配目标 IP 的最长前缀路由。
+// 私有网段(10/8、172.16/12、192.168/16)的流量如果只匹配到默认路由 0.0.0.0/0，
+// 说明它会从普通出口(比如无线)发出去，必然到不了内网 —— 判定为隧道未建立。
+let ROUTE_CACHE = { ts: 0, list: null };
+function routeTable() {
+  const now = Date.now();
+  if (ROUTE_CACHE.list && now - ROUTE_CACHE.ts < 5000) return ROUTE_CACHE.list;
+  const list = [];
+  try {
+    const { execFileSync } = require('child_process');
+    const out = execFileSync('route', ['print', '-4'], {
+      encoding: 'latin1', timeout: 4000, windowsHide: true
+    });
+    const re = /^\s*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/;
+    for (const line of String(out).split(/\r?\n/)) {
+      const m = line.match(re);
+      if (m) list.push({ dest: m[1], mask: m[2], gw: m[3], iface: m[4] });
+    }
+  } catch (_) { /* 读不到路由表就放弃判断，不影响采集 */ }
+  ROUTE_CACHE = { ts: now, list };
+  return list;
+}
+function isPrivate(ip) {
+  const t = ip.split('.').map(Number);
+  if (t.length !== 4 || t.some(n => !Number.isFinite(n))) return false;
+  if (t[0] === 10) return true;
+  if (t[0] === 172 && t[1] >= 16 && t[1] <= 31) return true;
+  if (t[0] === 192 && t[1] === 168) return true;
+  return false;
+}
+function tunnelMissing(host) {
+  try {
+    const ip = String(host || '');
+    if (!isPrivate(ip)) return false;
+    const list = routeTable();
+    if (!list.length) return false;               // 读不到路由表就不下结论
+    const t = ip.split('.').map(Number);
+    const target = ((t[0] << 24) | (t[1] << 16) | (t[2] << 8) | t[3]) >>> 0;
+    let best = null, bestBits = -1;
+    for (const r of list) {
+      const d = r.dest.split('.').map(Number);
+      const m = r.mask.split('.').map(Number);
+      const dv = ((d[0] << 24) | (d[1] << 16) | (d[2] << 8) | d[3]) >>> 0;
+      const mv = ((m[0] << 24) | (m[1] << 16) | (m[2] << 8) | m[3]) >>> 0;
+      if ((target & mv) !== (dv & mv)) continue;
+      let bits = 0;
+      for (let i = 31; i >= 0; i--) { if (mv & (1 << i)) bits++; else break; }
+      if (bits > bestBits) { bestBits = bits; best = r; }
+    }
+    if (!best) return true;                       // 一条路由都匹配不上
+    // 只匹配到默认路由 = 会从普通出口发出去，到不了内网
+    return best.dest === '0.0.0.0';
+  } catch (_) { return false; }
+}
+
 // 把网络层错误翻译成可读提示，方便在界面上区分"设备掉线"和"会话问题"
 function classifyNet(err, host) {
   if (!err) return err;
   const msg = err.message || String(err);
-  if (/timeout/i.test(msg)) {
-    const e = new Error('连接超时：设备无响应或网络不通（' + host + '）');
-    e.code = 'UNREACHABLE';
-    return e;
-  }
+if (/timeout/i.test(msg)) {
+      const down = tunnelMissing(host);
+      const e = new Error(down
+        ? '网络不通：本机未建立到 10.x 内网的隧道（VPN / 零信任未连接）—— ' + host
+        : '连接超时：设备无响应或网络不通（' + host + '）');
+      e.code = down ? 'TUNNEL_DOWN' : 'UNREACHABLE';
+      return e;
+    }
   if (/ECONNREFUSED/i.test(msg)) {
     const e = new Error('连接被拒绝：设备 Web 服务未开启');
     e.code = 'UNREACHABLE';
@@ -118,6 +180,27 @@ class VertivITA2 {
     })();
     try { return await this._loggingIn; }
     finally { this._loggingIn = null; }
+  }
+
+  // 轻量连通性探测：只做 TCP 握手，不发 HTTP、不登录，
+  // 因此不会占用设备仅有的网页会话槽，也不会触发登录限流。
+  // 用于"网络恢复探测"——端口一通就立刻重新采集，而不是干等退避。
+  async probePort(timeoutMs) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      let done = false;
+      const sock = net.connect({ host: this.host, port: this.port });
+      const fin = (ok) => {
+        if (done) return;
+        done = true;
+        try { sock.destroy(); } catch (_) { /* ignore */ }
+        resolve({ ok, ms: Date.now() - t0 });
+      };
+      sock.setTimeout(timeoutMs || 2000);
+      sock.on('connect', () => fin(true));
+      sock.on('timeout', () => fin(false));
+      sock.on('error', () => fin(false));
+    });
   }
 
   async logout() {
@@ -332,4 +415,4 @@ function evaluate(s) {
   return { level: sev, issues };
 }
 
-module.exports = { VertivITA2, normalize, ENUM };
+module.exports = { VertivITA2, normalize, ENUM, classifyNet, tunnelMissing };

@@ -84,6 +84,8 @@
     min-height:112px;display:flex;flex-direction:column
   }
   .tile .terr{font-size:10px;color:var(--dim);margin-top:auto;padding-left:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .tretry{font-size:10px;color:var(--info);padding-left:7px;margin-top:1px;font-variant-numeric:tabular-nums}
+  .tretry{font-size:11px;color:var(--info);font-variant-numeric:tabular-nums}
   .tile .tload{margin-top:auto}
   /* ---------- 拖放排序 ---------- */
   .tile[draggable=true]{cursor:grab}
@@ -519,7 +521,7 @@
 
 <div class="mask" id="mask-detail">
   <div class="sheet">
-    <div class="shead"><h2 id="d-title">设备详情</h2><button class="x" data-close="mask-detail">×</button></div>
+    <div class="shead"><div style="min-width:0"><h2 id="d-title">设备详情</h2><div id="d-sub" style="font-size:12px;color:var(--muted);margin-top:2px"></div></div><button class="x" data-close="mask-detail">×</button></div>
     <div class="sbody" id="d-body"></div>
   </div>
 </div>
@@ -843,7 +845,9 @@ function renderCard(d){
   }else{
     metrics=metric("输入电压",null)+metric("输出电压",null)+metric("负载率",null)+
             metric("输出电流",null)+metric("电池容量",null)+metric("备电时间",null);
-    footer = d.error?esc(d.error):"正在建立会话…";
+    footer = d.error
+      ? (esc(d.error)+' <span class="tretry" data-retry="'+(d.nextRetryAt||0)+'"></span>')
+      : "正在建立会话…";
   }
   return '<div class="card '+cl+'" draggable="true" data-id="'+d.cfg.id+'">'+
     '<div class="chead"><div style="min-width:0">'+
@@ -895,7 +899,8 @@ function renderTile(d){
   }else{
     big='<div class="tbig off">'+(d.status==="disabled"?"已暂停":(d.status==="starting"?"连接中":"离线"))+'</div>';
     sub='<div class="tsub"><span>'+esc(d.cfg.host)+'</span></div>';
-    bar='<div class="terr">'+esc((d.error||"—").slice(0,26))+'</div>';
+    bar='<div class="terr">'+esc((d.error||"—").slice(0,26))+'</div>'+
+        '<div class="tretry" data-retry="'+(d.nextRetryAt||0)+'"></div>';
   }
   const sub2=d.cfg.site||d.cfg.model||d.cfg.host;
   return '<div class="tile '+cls+'" draggable="true" data-id="'+d.cfg.id+'" title="'+esc(d.cfg.name+' · '+d.cfg.host+'\n拖动可调整顺序')+'">'+
@@ -1090,7 +1095,8 @@ function renderListView(){
     const cl3=(k)=>lv(k)==="crit"?"r":lv(k)==="warn"?"c":"";
     const dot=d.status==="online"?"g":(d.status==="disabled"?"off":"r");
     return '<tr>'+
-      '<td><span class="pill '+dot+'">'+(d.status==="online"?"在线":d.status==="disabled"?"暂停":d.status==="degraded"?"异常":"离线")+'</span></td>'+
+      '<td><span class="pill '+dot+'">'+(d.status==="online"?"在线":d.status==="disabled"?"暂停":d.status==="degraded"?"异常":"离线")+'</span>'+
+        '<div class="tretry" data-retry="'+(d.nextRetryAt||0)+'"></div></td>'+
       '<td><a style="color:#d7ecfb;text-decoration:none;cursor:pointer" data-detail="'+c.id+'" title="'+esc(c.host)+'">'+esc(c.name)+'</a>'+
         '<div class="sub" style="color:var(--dim);font-size:11px;font-family:ui-monospace,Consolas,monospace">'+esc(c.host)+'</div></td>'+
       '<td>'+esc(c.site||"—")+'</td>'+
@@ -1252,6 +1258,15 @@ function renderTilesView(){
   renderEvents();
 }
 
+// 重试倒计时：每秒刷新一次，让"系统在退避重试"看得见
+function updateRetryCountdowns(){
+  document.querySelectorAll("[data-retry]").forEach(el=>{
+    const t=Number(el.dataset.retry)||0;
+    if(!t){ el.textContent=""; return; }
+    const s=Math.max(0,Math.ceil((t-Date.now())/1000));
+    el.textContent = s>0 ? (s+" 秒后重试") : "正在重试…";
+  });
+}
 function renderEvents(){
   const evs=STATE.events||[];
   $("events").innerHTML = evs.length ? evs.slice(0,30).map(e=>
@@ -1819,6 +1834,12 @@ function renderDetail(id){
   if(!d) return;
   const c=d.cfg;
   $("d-title").textContent=c.name+" · "+c.host;
+  if(d.status!=="online"){
+    $("d-sub").innerHTML='<span style="color:var(--crit)">'+esc(d.error||"离线")+'</span> '+
+      '<span class="tretry" data-retry="'+(d.nextRetryAt||0)+'"></span>';
+  }else{
+    $("d-sub").innerHTML='<span style="color:var(--ok)">在线</span> · 最近成功 '+ago(d.lastOkAt);
+  }
   let html='<div class="kv">'+
     row("所在场地",esc(c.site||""),"—")+
     row("服务商（集成商）",esc(c.integrator||""),"—")+
@@ -2238,8 +2259,9 @@ document.querySelectorAll("#mask-detail").forEach(m=>{
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ $("mask").classList.remove("on"); $("mask-detail").classList.remove("on"); detailId=null; } });
 
-function loop(){ clearTimeout(loopTimer); loopTimer=setTimeout(async()=>{ await refresh(); loop(); }, 5000); }
+function loop(){ clearTimeout(loopTimer); loopTimer=setTimeout(async()=>{ await refresh(); updateRetryCountdowns(); loop(); }, 5000); }
 refresh().then(loop);
+setInterval(updateRetryCountdowns, 1000);
 </script>
 </body>
 </html>

@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { Store } = require('./lib/store');
 const { Settings } = require('./lib/settings');
-const { VertivITA2 } = require('./lib/vertiv');
+const { VertivITA2, tunnelMissing } = require('./lib/vertiv');
 const { AlertEngine } = require('./lib/alerts');
 const { HistoryStore } = require('./lib/history');
 const thresholds = require('./lib/thresholds');
@@ -50,6 +50,32 @@ function sumOf(tr) {
   if (!vals.length) return null;
   return vals.reduce((x, y) => x + y, 0);
 }
+// 按错误类型分级的退避策略
+// 关键点：网络不通（VPN 掉线、网线松了）与设备限流是两回事，
+// 前者要"快速恢复"，后者要"别再刺激设备"。
+function backoffMs(code, failCount, intervalMs) {
+  const n = Math.min(Math.max(failCount - 1, 0), 6);
+  switch (code) {
+    case 'TUNNEL_DOWN':
+      // VPN / 零信任隧道未建立：固定 12 秒一探，隧道一恢复马上重新采集
+      return 12000;
+    case 'UNREACHABLE':
+      // 网络不通：短退避，配合 TCP 快速探测，VPN 一恢复 15 秒内就能重新采集
+      return Math.min(15000 * Math.pow(1.6, n), 60000);
+    case 'SESSION_FULL':
+    case 'SESSION_LOST':
+      // 设备网页会话被限流：退避要长，别再去撞它的登录接口
+      return Math.min(60000 * Math.pow(2, n), 300000);
+    case 'LOGIN_THROTTLED':
+      return Math.min(30000 * Math.pow(1.5, n), 120000);
+    case 'AUTH_FAILED':
+      // 账号密码不对，重试没有意义，5 分钟后再试
+      return 300000;
+    default:
+      return Math.min(Math.max(intervalMs, 10000) * Math.pow(2, n), 120000);
+  }
+}
+
 function pick(tr) {
   if (!tr) return null;
   return tr.a !== null && tr.a !== undefined ? tr.a : avgOf(tr);
@@ -85,6 +111,8 @@ class Runner {
     this.failCount = 0;
     this.lastOkAt = 0;
     this.lastTryAt = 0;
+    this.lastErrorCode = null;   // 最近一次错误分类，用于选择退避策略
+    this.nextRetryAt = 0;        // 下次重试时间戳，界面用来显示倒计时
     this.cycle = 0;
     this.timer = null;
     this.stopped = true;
@@ -121,13 +149,32 @@ class Runner {
     const detail = this.cycle % DETAIL_EVERY === 1;
     const started = Date.now();
     try {
+      // 上一轮是"网络不通"：先做一次纯 TCP 探测（不登录、不占设备会话）。
+      // 端口一通就立刻重新采集——VPN 恢复后不再干等退避计时。
+      if (this.lastErrorCode === 'UNREACHABLE' || this.lastErrorCode === 'TUNNEL_DOWN') {
+        const p = await this.client.probePort(2000);
+        if (!p.ok) {
+          this.failCount++;
+          // 隧道没建立时固定 12 秒一探——隧道恢复是瞬时的，指数退避反而拖慢恢复
+          this.lastErrorCode = tunnelMissing(this.dev.host) ? 'TUNNEL_DOWN' : 'UNREACHABLE';
+          if (this.lastErrorCode === 'TUNNEL_DOWN') {
+            this.error = '网络不通：本机未建立到 10.x 内网的隧道（VPN / 零信任未连接）—— ' + this.dev.host;
+          }
+          this.scheduleRetry(this.lastErrorCode);
+          this.evalAlerts();
+          return;
+        }
+        this.lastErrorCode = null;   // 网络已恢复，继续走正常采集流程
+      }
       const snap = await this.client.poll({ detail });
       applyThresholds(snap);
       const wasDown = this.status === 'offline' || this.status === 'degraded' || this.status === 'starting';
       this.snap = snap;
       this.status = 'online';
       this.error = null;
+      this.lastErrorCode = null;
       this.failCount = 0;
+      this.nextRetryAt = 0;
       this.lastOkAt = snap.ts;
       this.record(snap, detail);
       this.checkTransitions(snap, detail);
@@ -139,12 +186,19 @@ class Runner {
       this.failCount++;
       this.status = this.snap ? 'degraded' : 'offline';
       this.error = e.message || String(e);
+      this.lastErrorCode = e.code || 'UNKNOWN';
       if (this.failCount === 1) pushEvent(this.dev.id, 'crit', this.dev.name + '：' + this.error);
-      const base = (e.code === 'SESSION_FULL' || e.code === 'UNREACHABLE') ? 60000 : this.dev.intervalMs;
-      const backoff = Math.min(base * Math.pow(2, Math.min(this.failCount - 1, 5)), 300000);
-      this.schedule(backoff);
+      this.scheduleRetry(this.lastErrorCode);
     }
     this.evalAlerts();
+  }
+
+  // 按错误类型计算下一次重试，并把时间暴露给界面
+  // （让用户看到"X 秒后重试"，而不是以为系统挂了就干等）
+  scheduleRetry(code) {
+    const delay = backoffMs(code, this.failCount, this.dev.intervalMs);
+    this.nextRetryAt = Date.now() + delay;
+    this.schedule(delay);
   }
 
   // 型号留空时用设备自报型号自动补全，保证"按型号分组"可用
@@ -230,6 +284,8 @@ class Runner {
       failCount: this.failCount,
       lastOkAt: this.lastOkAt,
       lastTryAt: this.lastTryAt,
+      lastErrorCode: this.lastErrorCode,
+      nextRetryAt: this.nextRetryAt,
       snap: this.snap,
       history: includeHistory ? this.history : undefined,
       historyCount: this.history.length
