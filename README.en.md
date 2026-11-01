@@ -27,23 +27,24 @@ Adding a device means entering **IP + web account + password** — everything el
 
 ### Screenshots
 
-| Tile overview (40 devices, one screen) | Device cards (trend lines with hover readout) |
-|---|---|
-| ![Tile overview](screenshots/01-dashboard-tiles.png) | ![Device cards](screenshots/02-cards.png) |
+![UPS Monitor · tile overview](screenshots/01-dashboard-tiles.png)
 
-| Hover readout | List view (sortable / compact) |
-|---|---|
-| ![Hover](screenshots/03-spark-hover.png) | ![List](screenshots/04-list.png) |
+*(Captured from a live run; device names and IP addresses are masked)*
 
-| Group panels | Metric thresholds |
-|---|---|
-| ![Groups](screenshots/05-groups.png) | ![Thresholds](screenshots/06-thresholds.png) |
+**Tile overview**: one tile per device showing supply state, load, output voltage, battery capacity and a
+load bar; warnings turn yellow, critical faults red, offline grey. The top bar switches between
+**tile overview / device cards / list / group panels**, and an "only show abnormal devices" filter
+finds problems instantly even at 40-device scale.
 
-| Device registry | Detail + history charts |
-|---|---|
-| ![Devices](screenshots/07-devices.png) | ![Detail](screenshots/08-detail-history.png) |
+The other views and capabilities:
 
-*(Captured from a live run; IP addresses are masked)*
+- **Device cards** — full metric grid plus output-voltage and load trend lines, with a hover readout
+- **List** — 15-column table, sortable by column header, with a compact mode
+- **Groups** — collapsible panels; drag a tile to assign it to a group
+- **Device detail** — full input/output/bypass/load/battery metrics, threshold verdicts and
+  multi-track charts from 1 hour to 30 days
+- **Alert management** — metric thresholds (each with its source cited), alert rules, WeCom and email channels
+- **Device registry** — asset fields, bulk assign/enable/disable/delete
 
 ---
 

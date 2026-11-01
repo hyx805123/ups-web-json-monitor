@@ -1523,7 +1523,7 @@ function openDeviceForm(id){
   const fields=[
     {key:"name",label:"设备名称",required:true,placeholder:"例如：广州仓库-1F-UPS01"},
     {type:"row",keys:["host","port"],fields:[
-      {key:"host",label:"IP 地址",required:true,placeholder:"10.204.130.240"},
+      {key:"host",label:"IP 地址",required:true,placeholder:"192.168.1.10"},
       {key:"port",label:"端口",type:"number"}]},
     {type:"row",keys:["username","password"],fields:[
       {key:"username",label:"网页账号",placeholder:"user"},
@@ -1820,10 +1820,10 @@ function renderDetail(id){
   const c=d.cfg;
   $("d-title").textContent=c.name+" · "+c.host;
   let html='<div class="kv">'+
-    row("所在场地",esc(c.site||""))+
-    row("服务商（集成商）",esc(c.integrator||""))+
-    row("上线日期",esc(c.commissionDate||""))+
-    row("出厂序列号",esc(c.serial||""))+
+    row("所在场地",esc(c.site||""),"—")+
+    row("服务商（集成商）",esc(c.integrator||""),"—")+
+    row("上线日期",esc(c.commissionDate||""),"—")+
+    row("出厂序列号",esc(c.serial||""),"—")+
     row("设备型号",esc(c.model||(d.snap?d.snap.model:"")))+
     row("额定容量",d.snap&&d.snap.ratedKw?d.snap.ratedKw+" kW":null)+
     row("整机供电状态",d.snap?esc(d.snap.supply.text):null)+
