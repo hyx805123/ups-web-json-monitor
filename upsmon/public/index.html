@@ -310,6 +310,42 @@
   .tcard.on .tname .tick{opacity:1}
   .tdesc{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.45}
 
+  /* ---------- 历史查询 ---------- */
+  .hseg{display:flex;gap:2px;padding:2px;border:1px solid var(--line2);border-radius:8px;background:var(--seg-bg)}
+  .hseg button{padding:5px 11px;border:0;background:none;border-radius:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+  .hseg button:hover{color:var(--text)}
+  .hseg button.on{background:var(--accent-bg);color:var(--text-hi)}
+  .hfield{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .hfield input{
+    padding:6px 9px;border-radius:7px;border:1px solid var(--line2);background:var(--field-bg);
+    color:var(--text);font-size:12.5px;outline:none;color-scheme:dark
+  }
+  body[data-theme="light"] .hfield input{color-scheme:light}
+  .hfield input:focus{border-color:var(--accent-border)}
+  .hfield input:disabled{opacity:.5}
+  .hchart{position:relative;padding:12px 14px 8px}
+  .hchart svg{display:block;width:100%;height:290px;overflow:visible}
+  .hchart .hgrid{stroke:var(--line);stroke-width:1}
+  .hchart .haxis{fill:var(--dim);font-size:10.5px;font-family:ui-monospace,Consolas,monospace}
+  .hchart .hline{stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3;opacity:.75}
+  .hchart .htip{
+    position:absolute;pointer-events:none;z-index:6;background:var(--tip-bg);
+    border:1px solid var(--line2);border-radius:7px;padding:6px 10px;font-size:11.5px;
+    display:none;white-space:nowrap;box-shadow:0 8px 22px var(--shadow-sm);line-height:1.6
+  }
+  .hchart .htip .tt{color:var(--muted);font-size:10.5px;font-family:ui-monospace,Consolas,monospace;display:block}
+  .hchart .htip .tv{font-weight:600;font-size:13px;font-variant-numeric:tabular-nums}
+  .hchart .hempty{height:290px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--dim);font-size:13px}
+  .hstats{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+  .hstat{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:11px 13px}
+  .hstat .k{font-size:11.5px;color:var(--muted)}
+  .hstat .v{font-size:19px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums;line-height:1.25}
+  .hstat .v small{font-size:11px;font-weight:400;color:var(--muted);margin-left:3px}
+  .hstat .s{font-size:11px;color:var(--dim);margin-top:3px;min-height:15px}
+  .hstat.ok .v{color:var(--ok)} .hstat.warn .v{color:var(--warn)} .hstat.crit .v{color:var(--crit)}
+  .hlegend{display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--muted)}
+  .hlegend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
   /* ---------- 页脚版权 ---------- */
   .copyright{
     display:none;margin:auto 0 0;padding-top:14px;border-top:1px solid var(--line);
@@ -445,6 +481,7 @@
   <div class="tabs" id="tabs">
     <button class="tab on" data-view="dash">看板</button>
     <button class="tab" data-view="devices">设备管理</button>
+    <button class="tab" data-view="history">历史查询</button>
     <button class="tab" data-view="groups">分组管理</button>
     <button class="tab" data-view="templates">配置模板</button>
     <button class="tab" data-view="alerts">告警管理</button>
@@ -511,6 +548,75 @@
         <tbody></tbody>
       </table>
     </div></div>
+  </section>
+
+  <section class="view" id="v-history">
+    <div class="note-box" style="margin-bottom:14px">
+      采样点每 10 秒一个，完整落盘在 <code>data/history/&lt;设备&gt;/&lt;日期&gt;.jsonl</code>，永久保留、重启不丢。
+      查询时只读取与所选区间相交的日期分片，所以查 1 小时和查 90 天都是秒级响应。
+      需要交给别人时点「导出 CSV」，Excel 直接打开，中文表头不乱码。
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3>查询条件</h3><span class="sp"></span>
+        <span id="histCoverage" style="font-size:11.5px;color:var(--muted)"></span></div>
+      <div style="padding:13px 14px 14px">
+        <div class="toolbar" style="margin-bottom:11px">
+          <select id="histDev" style="min-width:250px"></select>
+          <div class="hseg" id="histRange">
+            <button data-r="1h" class="on">1 小时</button>
+            <button data-r="6h">6 小时</button>
+            <button data-r="24h">24 小时</button>
+            <button data-r="7d">7 天</button>
+            <button data-r="30d">30 天</button>
+            <button data-r="90d">90 天</button>
+            <button data-r="custom">自定义</button>
+          </div>
+          <label class="hfield">起 <input type="datetime-local" id="histFrom" disabled></label>
+          <label class="hfield">止 <input type="datetime-local" id="histTo" disabled></label>
+          <select id="histPoints">
+            <option value="600">600 点</option>
+            <option value="1200" selected>1200 点</option>
+            <option value="3000">3000 点</option>
+          </select>
+          <button class="btn primary" id="histQuery">查询</button>
+          <button class="btn" id="histExport">导出 CSV</button>
+        </div>
+        <div class="chips" id="histMetrics">
+          <div class="chip on" data-k="loadPct">负载率 %</div>
+          <div class="chip" data-k="vOut">输出电压 V</div>
+          <div class="chip" data-k="vIn">输入电压 V</div>
+          <div class="chip" data-k="kw">有功功率 kW</div>
+          <div class="chip" data-k="battCap">电池容量 %</div>
+          <div class="chip" data-k="battV">电池电压 V</div>
+          <div class="chip" data-k="envTemp">环境温度 ℃</div>
+          <div class="chip" data-k="battTemp">电池温度 ℃</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3 id="histChartTitle">趋势曲线</h3><span class="sp"></span>
+        <div class="hlegend">
+          <span><i style="background:var(--accent)"></i><span id="histLegend">负载率</span></span>
+          <span id="histChartInfo" style="color:var(--dim)"></span>
+        </div>
+      </div>
+      <div class="hchart" id="histChart"></div>
+    </div>
+
+    <div class="hstats" id="histStats"></div>
+
+    <div class="panel">
+      <div class="pthead"><h3>区间事件</h3><span class="sp"></span>
+        <span id="histEvCount" style="font-size:11.5px;color:var(--muted)"></span></div>
+      <div class="tscroll" style="max-height:340px">
+        <table class="dt" id="histEvTable">
+          <thead><tr><th style="width:170px">时间</th><th style="width:78px">级别</th><th>内容</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <section class="view" id="v-groups">
@@ -2392,6 +2498,7 @@ async function refresh(){
     $("k-online").textContent=on; $("k-warn").textContent=w; $("k-crit").textContent=cr;
     if(VIEW==="dash") renderDash();
     if(VIEW==="devices") renderDevices();
+    if(VIEW==="history") renderHistory();
     if(VIEW==="groups") renderGroups();
     if(VIEW==="templates") renderTemplates();
     if(VIEW==="alerts"){ renderThresholds(); renderAlerts(); }
@@ -2421,6 +2528,298 @@ function renderFilters(){
   bg.value=bcur;
 }
 
+/* ---------------- 历史查询 ---------------- */
+const HIST_METRICS = {
+  loadPct:  {label:"负载率",   unit:"%",  digits:1},
+  vOut:     {label:"输出电压", unit:"V",  digits:1},
+  vIn:      {label:"输入电压", unit:"V",  digits:1},
+  kw:       {label:"有功功率", unit:"kW", digits:2},
+  battCap:  {label:"电池容量", unit:"%",  digits:1},
+  battV:    {label:"电池电压", unit:"V",  digits:1},
+  envTemp:  {label:"环境温度", unit:"℃", digits:1},
+  battTemp: {label:"电池温度", unit:"℃", digits:1}
+};
+const HIST_SPAN = {"1h":3600e3, "6h":6*3600e3, "24h":24*3600e3, "7d":7*24*3600e3,
+                   "30d":30*24*3600e3, "90d":90*24*3600e3};
+let HIST = {devId:null, range:"1h", metric:"loadPct", points:1200,
+            data:null, events:[], loading:false, overview:null, overviewAt:0, dirty:false};
+
+function hpad(n){ return String(n).padStart(2,"0"); }
+function histLocalValue(ts){
+  const d=new Date(ts);
+  return d.getFullYear()+"-"+hpad(d.getMonth()+1)+"-"+hpad(d.getDate())+"T"+hpad(d.getHours())+":"+hpad(d.getMinutes());
+}
+function histParseInput(v){
+  if(!v) return null;
+  const t=new Date(v).getTime();
+  return Number.isFinite(t)?t:null;
+}
+function histBytes(n){
+  if(!n) return "0 B";
+  if(n<1024) return n+" B";
+  if(n<1048576) return (n/1024).toFixed(1)+" KB";
+  if(n<1073741824) return (n/1048576).toFixed(1)+" MB";
+  return (n/1073741824).toFixed(2)+" GB";
+}
+function histRange(){
+  const now=Date.now();
+  if(HIST.range==="custom"){
+    const f=histParseInput($("histFrom").value), t=histParseInput($("histTo").value);
+    if(f&&t&&t>f) return {from:f, to:t};
+    return {from:now-24*3600e3, to:now};
+  }
+  const span=HIST_SPAN[HIST.range]||3600e3;
+  return {from:now-span, to:now};
+}
+function histTick(ts, span){
+  const d=new Date(ts);
+  if(span<=36*3600e3) return hpad(d.getHours())+":"+hpad(d.getMinutes());
+  if(span<=7*24*3600e3) return hpad(d.getMonth()+1)+"-"+hpad(d.getDate())+" "+hpad(d.getHours())+":"+hpad(d.getMinutes());
+  return hpad(d.getMonth()+1)+"-"+hpad(d.getDate());
+}
+
+async function histFillDevices(){
+  const sel=$("histDev");
+  const list=(STATE.devices||[]).map(d=>({id:d.cfg.id, name:d.cfg.name||d.cfg.host, host:d.cfg.host}));
+  const sig=list.map(d=>d.id+d.name).join("|");
+  if(sel._sig!==sig){
+    const cur=sel.value||HIST.devId;
+    sel._sig=sig;
+    sel.innerHTML=list.length
+      ? list.map(d=>'<option value="'+esc(d.id)+'">'+esc(d.name)+' — '+esc(d.host)+'</option>').join("")
+      : '<option value="">（暂无设备）</option>';
+    if(cur&&list.some(d=>d.id===cur)) sel.value=cur;
+    else if(list.length) sel.value=list[0].id;
+  }
+  HIST.devId=sel.value||null;
+
+  if(!HIST.overview||Date.now()-HIST.overviewAt>30000){
+    HIST.overviewAt=Date.now();
+    try{ HIST.overview=await api("/api/history"); }catch(_){ /* 概览失败不影响查询 */ }
+  }
+  const ov=((HIST.overview&&HIST.overview.devices)||[]).find(x=>x.id===HIST.devId);
+  $("histCoverage").textContent = ov
+    ? ("已有数据 "+ov.days+" 天（"+(ov.firstDay||"—")+" ~ "+(ov.lastDay||"—")+"，"+histBytes(ov.bytes)+"）")
+    : "";
+}
+
+async function renderHistory(){
+  await histFillDevices();
+  if(HIST.loading || !HIST.devId) return;
+  // 首次进入或数据已过期（>2 分钟）自动查一次，其余情况只重绘，避免 5 秒轮询反复读盘
+  if(!HIST.data || Date.now()-(HIST.at||0)>120000) return histQuery();
+  if(HIST.dirty){ HIST.dirty=false; histPaint(); }
+}
+
+async function histQuery(){
+  const devId=$("histDev").value;
+  if(!devId){ toast("还没有可查询的设备"); return; }
+  HIST.devId=devId;
+  HIST.points=Number($("histPoints").value)||1200;
+  const {from,to}=histRange();
+  if(from>=to){ toast("起始时间必须早于结束时间"); return; }
+
+  const btn=$("histQuery");
+  HIST.loading=true; btn.disabled=true; btn.textContent="查询中…";
+  try{
+    const q="/api/history/"+devId+"?from="+from+"&to="+to+"&points="+HIST.points;
+    const [d,ev]=await Promise.all([
+      api(q),
+      api("/api/events?from="+from+"&to="+to+"&limit=200").catch(()=>({events:[]}))
+    ]);
+    HIST.data=d;
+    HIST.events=(ev&&ev.events)||[];
+    HIST.from=from; HIST.to=to;
+    HIST.at=Date.now();
+    histPaint();
+    if(!((d.history||[]).length)) toast("该时段没有采样数据");
+  }catch(e){
+    toast("查询失败："+e.message);
+  }finally{
+    HIST.loading=false; btn.disabled=false; btn.textContent="查询";
+  }
+}
+
+function histPaint(){
+  histPaintChart();
+  histPaintStats();
+  histPaintEvents();
+}
+
+function histPaintChart(){
+  const box=$("histChart");
+  const meta=HIST_METRICS[HIST.metric]||HIST_METRICS.loadPct;
+  $("histLegend").textContent=meta.label;
+  $("histChartTitle").textContent="趋势曲线 · "+meta.label+"（"+meta.unit+"）";
+
+  const rows=(HIST.data&&HIST.data.history)||[];
+  const pts=rows.map(o=>({ts:o.ts, v:o[HIST.metric]}))
+    .filter(p=>p.v!==null&&p.v!==undefined&&p.v!=="")
+    .sort((a,b)=>a.ts-b.ts);
+
+  if(pts.length<2){
+    box.innerHTML='<div class="hempty"><div>该时段没有可绘制的采样点</div>'+
+      '<div style="font-size:12px">换一个时间范围或换个指标试试</div></div>';
+    $("histChartInfo").textContent="";
+    return;
+  }
+
+  const W=Math.max(520, (box.clientWidth||900)-28);
+  const H=290;
+  const pad={l:56, r:16, t:14, b:26};
+  const plotW=W-pad.l-pad.r, plotH=H-pad.t-pad.b;
+  const t0=pts[0].ts, t1=pts[pts.length-1].ts, spanX=Math.max(1,t1-t0);
+
+  const vals=pts.map(p=>p.v);
+  let vmin=Math.min.apply(null,vals), vmax=Math.max.apply(null,vals);
+  if(vmax-vmin<1e-9){ vmax+=1; vmin-=1; }
+  const padv=(vmax-vmin)*0.12; vmin-=padv; vmax+=padv;
+
+  const X=(ts)=>pad.l+((ts-t0)/spanX)*plotW;
+  const Y=(v)=>pad.t+(1-(v-vmin)/(vmax-vmin))*plotH;
+  const r2=(n)=>Math.round(n*100)/100;
+
+  // 网格 + 纵轴
+  let grid="", axis="";
+  const YN=4;
+  for(let i=0;i<=YN;i++){
+    const v=vmin+(vmax-vmin)*i/YN, y=r2(Y(v));
+    grid+='<line class="hgrid" x1="'+pad.l+'" y1="'+y+'" x2="'+r2(pad.l+plotW)+'" y2="'+y+'"/>';
+    axis+='<text class="haxis" x="'+(pad.l-8)+'" y="'+(y+3.5)+'" text-anchor="end">'+fmt(v,meta.digits)+'</text>';
+  }
+  // 横轴刻度
+  const XN=4;
+  for(let i=0;i<=XN;i++){
+    const ts=t0+spanX*i/XN, x=r2(X(ts));
+    axis+='<text class="haxis" x="'+x+'" y="'+(H-8)+'" text-anchor="'+(i===0?"start":i===XN?"end":"middle")+'">'+
+      histTick(ts,spanX)+'</text>';
+  }
+
+  let line="", area="";
+  for(let i=0;i<pts.length;i++){
+    line+=(i?" L":"M")+r2(X(pts[i].ts))+" "+r2(Y(pts[i].v));
+  }
+  area=line+" L"+r2(X(t1))+" "+r2(pad.t+plotH)+" L"+r2(X(t0))+" "+r2(pad.t+plotH)+" Z";
+
+  box.innerHTML=
+    '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
+      '<defs><linearGradient id="histGrad" x1="0" y1="0" x2="0" y2="1">'+
+        '<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.30"/>'+
+        '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>'+
+      '</linearGradient></defs>'+
+      grid+axis+
+      '<path d="'+area+'" fill="url(#histGrad)" stroke="none"/>'+
+      '<path d="'+line+'" fill="none" stroke="var(--accent)" stroke-width="1.6" '+
+        'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'+
+      '<line class="hline" x1="0" y1="'+pad.t+'" x2="0" y2="'+r2(pad.t+plotH)+'" style="display:none"/>'+
+      '<circle class="hdot" r="3.5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" style="display:none"/>'+
+      '<rect class="hhit" x="'+pad.l+'" y="'+pad.t+'" width="'+r2(plotW)+'" height="'+r2(plotH)+'" fill="transparent"/>'+
+    '</svg><div class="htip"></div>';
+
+  const svg=box.querySelector("svg");
+  const tip=box.querySelector(".htip");
+  const hline=box.querySelector(".hline");
+  const hdot=box.querySelector(".hdot");
+  const hit=box.querySelector(".hhit");
+
+  hit.addEventListener("mousemove", ev=>{
+    const rect=svg.getBoundingClientRect();
+    if(!rect.width) return;
+    const sx=(ev.clientX-rect.left)*(W/rect.width);
+    let i=Math.round((sx-pad.l)/plotW*(pts.length-1));
+    i=Math.max(0,Math.min(pts.length-1,i));
+    const p=pts[i], x=r2(X(p.ts)), y=r2(Y(p.v));
+    hline.setAttribute("x1",x); hline.setAttribute("x2",x); hline.style.display="";
+    hdot.setAttribute("cx",x); hdot.setAttribute("cy",y); hdot.style.display="";
+    tip.innerHTML='<span class="tt">'+dt(p.ts)+'</span>'+
+      '<span class="tv">'+fmt(p.v,meta.digits)+' <span style="font-size:10.5px;color:var(--muted)">'+meta.unit+'</span></span>';
+    tip.style.display="block";
+    const boxRect=box.getBoundingClientRect();
+    const px=(x/W)*rect.width+(rect.left-boxRect.left);
+    let left=px+14;
+    if(left+tip.offsetWidth>boxRect.width-8) left=px-tip.offsetWidth-14;
+    tip.style.left=Math.max(4,left)+"px";
+    tip.style.top=Math.max(4,(ev.clientY-boxRect.top)-tip.offsetHeight-10)+"px";
+  });
+  hit.addEventListener("mouseleave", ()=>{
+    hline.style.display="none"; hdot.style.display="none"; tip.style.display="none";
+  });
+
+  const d=HIST.data||{};
+  $("histChartInfo").textContent=(rows.length)+" 个点 · 耗时 "+(d.elapsedMs||0)+" ms · 来自 "+
+    (d.source==="mem"?"内存":d.source==="empty"?"—":"磁盘+内存");
+}
+
+function histPaintStats(){
+  const host=$("histStats");
+  const st=HIST.data&&HIST.data.stats;
+  if(!st||!st.count){
+    host.innerHTML='<div class="hstat"><div class="k">该时段无数据</div><div class="v">—</div>'+
+      '<div class="s">换一个时间范围试试</div></div>';
+    return;
+  }
+  const g=(k)=>st.metrics[k]||null;
+  const pick=(k,field,digits)=>{
+    const m=g(k);
+    if(!m) return "—";
+    return fmt(m[field],digits===undefined?1:digits)||"—";
+  };
+  const interval=(st.count>1&&st.lastTs>st.firstTs)
+    ? Math.max(1,Math.round((st.lastTs-st.firstTs)/(st.count-1)/1000)) : 0;
+  const sampleMin=interval?Math.round(st.count*interval/60):0;
+  const disMin=Math.round(st.discharge.ms/60000);
+  const bypassMin=interval?Math.round(st.bypassSamples*interval/60):0;
+
+  const cards=[
+    {k:"采样点", v:st.count, u:"个", s:(interval?("平均间隔 "+interval+" 秒 · 覆盖 "+sampleMin+" 分钟"):"")},
+    {k:"平均负载", v:pick("loadPct","avg"), u:"%", s:"峰值 "+pick("loadPct","max")+" % · 最低 "+pick("loadPct","min")+" %"},
+    {k:"峰值负载", v:pick("loadPct","max"), u:"%", s:"有功功率均值 "+pick("kw","avg",2)+" kW", cls:"warn"},
+    {k:"最低电池容量", v:pick("battCap","min"), u:"%",
+      s:"平均 "+pick("battCap","avg")+" % · 备电 "+pick("backupMin","avg",0)+" min"},
+    {k:"市电中断 / 放电", v:st.discharge.episodes, u:"次",
+      s:(disMin>0?("累计放电约 "+disMin+" 分钟"):"该时段电池未放电"), cls:st.discharge.episodes?"crit":"ok"},
+    {k:"旁路运行", v:bypassMin, u:"分钟", s:"样本 "+st.bypassSamples+" 个", cls:st.bypassSamples?"warn":""},
+    {k:"告警 / 故障样本", v:st.alarmSamples, u:"个", s:"故障样本 "+st.faultSamples+" 个", cls:st.alarmSamples?"warn":""},
+    {k:"环境温度", v:pick("envTemp","avg"), u:"℃", s:"最高 "+pick("envTemp","max")+" ℃ · 电池 "+pick("battTemp","avg")+" ℃"}
+  ];
+
+  host.innerHTML=cards.map(c=>{
+    const val=(c.v===null||c.v===undefined||c.v==="")?"—":c.v;
+    return '<div class="hstat '+(c.cls||"")+'"><div class="k">'+esc(c.k)+'</div>'+
+      '<div class="v">'+esc(val)+(c.u&&val!=="—"?'<small>'+esc(c.u)+'</small>':'')+'</div>'+
+      '<div class="s">'+(c.s?esc(c.s):"")+'</div></div>';
+  }).join("");
+}
+
+function histPaintEvents(){
+  const list=(HIST.events||[]).slice().sort((a,b)=>b.ts-a.ts);
+  $("histEvCount").textContent=list.length
+    ? ("共 "+list.length+" 条"+(list.length>=200?"（已截断，最多 200 条）":""))
+    : "";
+  const tb=$("histEvTable").querySelector("tbody");
+  tb.innerHTML=list.length
+    ? list.map(e=>{
+        const lv=e.level||"info";
+        const cls=lv==="crit"?"r":lv==="warn"?"y":lv==="ok"?"g":"";
+        return '<tr><td class="num" style="color:var(--muted);white-space:nowrap">'+dt(e.ts)+'</td>'+
+          '<td><span class="pill '+cls+'">'+esc(lv)+'</span></td>'+
+          '<td>'+esc(e.msg)+'</td></tr>';
+      }).join("")
+    : '<tr><td colspan="3" class="empty">该时段没有记录事件</td></tr>';
+}
+
+function histExportCsv(){
+  const devId=$("histDev").value;
+  if(!devId){ toast("还没有可导出的设备"); return; }
+  const {from,to}=histRange();
+  if(from>=to){ toast("起始时间必须早于结束时间"); return; }
+  const url="/api/history/"+devId+"/export?from="+from+"&to="+to;
+  const a=document.createElement("a");
+  a.href=url; a.download=""; a.rel="noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("正在导出 CSV，行数多时稍等片刻");
+}
+
 /* ---------------- 事件绑定 ---------------- */
 $("tabs").addEventListener("click", e=>{
   const t=e.target.closest(".tab"); if(!t) return;
@@ -2428,6 +2827,41 @@ $("tabs").addEventListener("click", e=>{
   VIEW=t.dataset.view;
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on", v.id==="v-"+VIEW));
   refresh();
+});
+
+/* ---------------- 历史查询交互 ---------------- */
+$("histRange").addEventListener("click", e=>{
+  const b=e.target.closest("button[data-r]"); if(!b) return;
+  $("histRange").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+  HIST.range=b.dataset.r;
+  const custom=HIST.range==="custom";
+  $("histFrom").disabled=!custom; $("histTo").disabled=!custom;
+  if(custom){
+    const now=Date.now();
+    if(!$("histFrom").value) $("histFrom").value=histLocalValue(now-24*3600e3);
+    if(!$("histTo").value) $("histTo").value=histLocalValue(now);
+  }
+  histQuery();
+});
+$("histMetrics").addEventListener("click", e=>{
+  const c=e.target.closest(".chip[data-k]"); if(!c) return;
+  $("histMetrics").querySelectorAll(".chip").forEach(x=>x.classList.toggle("on", x===c));
+  HIST.metric=c.dataset.k;
+  if(HIST.data) histPaintChart();
+});
+$("histDev").onchange=()=>{ HIST.data=null; histQuery(); };
+$("histPoints").onchange=()=>{ histQuery(); };
+$("histQuery").onclick=()=>histQuery();
+$("histExport").onclick=()=>histExportCsv();
+$("histFrom").onchange=()=>{ if(HIST.range==="custom") histQuery(); };
+$("histTo").onchange=()=>{ if(HIST.range==="custom") histQuery(); };
+
+// 窗口宽度变化时重画曲线（viewBox 按像素宽度计算，需要重算）
+let histResizeTimer=null;
+window.addEventListener("resize", ()=>{
+  if(VIEW!=="history"||!HIST.data) return;
+  clearTimeout(histResizeTimer);
+  histResizeTimer=setTimeout(()=>histPaintChart(), 180);
 });
 $("btn-refresh").onclick=async()=>{ await refresh(); toast("已刷新"); };
 $("onlyAlert").onchange=()=>{ onlyAlert=$("onlyAlert").checked; renderDash(); };

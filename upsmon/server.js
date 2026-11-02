@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { Store } = require('./lib/store');
 const { Settings } = require('./lib/settings');
-const { VertivITA2, tunnelMissing, identityOf } = require('./lib/vertiv');
+const { VertivITA2, tunnelMissing, identityOf, ENUM } = require('./lib/vertiv');
 const { AlertEngine } = require('./lib/alerts');
 const { HistoryStore } = require('./lib/history');
 const thresholds = require('./lib/thresholds');
@@ -27,6 +27,7 @@ const HISTORY_MAX = 3600;      // 内存环形缓冲：10s 间隔下约 1 小时
 const SPARK_POINTS = 120;      // 随 /api/state 下发的趋势点数
 const EVENTS_MAX = 400;
 const DETAIL_EVERY = 3;        // 每 3 个周期拉一次明细接口 ≈ 30s
+let HIST_OVERVIEW_CACHE = null; // 历史覆盖概览缓存（30 秒）
 
 const events = [];
 const runners = new Map();
@@ -448,7 +449,13 @@ const server = http.createServer(async (req, res) => {
     // ---------- 持久化事件 ----------
     if (p === '/api/events' && m === 'GET') {
       const limit = Math.max(1, Math.min(2000, Number(url.searchParams.get('limit')) || 300));
-      return json(res, 200, { events: history.readEvents(limit) });
+      const from = Number(url.searchParams.get('from'));
+      const to = Number(url.searchParams.get('to'));
+      return json(res, 200, {
+        events: history.readEvents(limit,
+          isFinite(from) && from > 0 ? from : null,
+          isFinite(to) && to > 0 ? to : null)
+      });
     }
 
     // ---------- 状态 ----------
@@ -657,26 +664,125 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    const mHist = p.match(/^\/api\/history\/([0-9a-fA-F-]{36})$/);
+    // ---------- 历史数据覆盖概览（给「历史查询」页的设备下拉做提示） ----------
+    if (p === '/api/history' && m === 'GET') {
+      const now = Date.now();
+      if (!HIST_OVERVIEW_CACHE || now - HIST_OVERVIEW_CACHE.ts > 30000) {
+        const items = [];
+        for (const d of store.list()) {
+          const days = history.listDays(d.id);
+          let bytes = 0;
+          for (const day of days) {
+            try { bytes += fs.statSync(path.join(DATA_DIR, 'history', d.id, day + '.jsonl')).size; } catch (e) {}
+          }
+          items.push({
+            id: d.id, name: d.name, model: d.model || '', site: d.site || '',
+            days: days.length, firstDay: days[0] || null, lastDay: days[days.length - 1] || null,
+            bytes
+          });
+        }
+        HIST_OVERVIEW_CACHE = { ts: now, items };
+      }
+      return json(res, 200, {
+        devices: HIST_OVERVIEW_CACHE.items,
+        totalBytes: HIST_OVERVIEW_CACHE.items.reduce((s, x) => s + x.bytes, 0)
+      });
+    }
+
+    const mHist = p.match(/^\/api\/history\/([0-9a-fA-F-]{36})(\/export)?$/);
     if (mHist) {
       const id = mHist[1];
+      const isExport = !!mHist[2];
       const r = runners.get(id);
       const range = url.searchParams.get('range') || '1h';
       const points = Math.max(50, Math.min(5000, Number(url.searchParams.get('points')) || 600));
       const now = Date.now();
-      const span = { '1h': 3600e3, '6h': 6 * 3600e3, '24h': 24 * 3600e3,
-        '7d': 7 * 24 * 3600e3, '30d': 30 * 24 * 3600e3 }[range] || 3600e3;
-      const toTs = Number(url.searchParams.get('to')) || now;
-      const fromTs = Number(url.searchParams.get('from')) || (toTs - span);
-      // 先从内存取最近区间，超出部分从磁盘补齐
-      const mem = r ? r.history.filter(h => h.ts >= fromTs && h.ts <= toTs) : [];
-      let rows = mem;
-      if (mem.length < points) {
-        const disk = history.read(id, fromTs, toTs, points);
-        const seen = new Set(mem.map(m => m.ts));
-        for (const d of disk) if (!seen.has(d.ts)) rows.push(d);
-        rows.sort((a, b) => a.ts - b.ts);
+      const span = {
+        '1h': 3600e3, '6h': 6 * 3600e3, '24h': 24 * 3600e3,
+        '7d': 7 * 24 * 3600e3, '30d': 30 * 24 * 3600e3,
+        '90d': 90 * 24 * 3600e3, '365d': 365 * 24 * 3600e3
+      }[range] || 3600e3;
+      const toParam = Number(url.searchParams.get('to'));
+      const fromParam = Number(url.searchParams.get('from'));
+      const hasTo = isFinite(toParam) && toParam > 0;
+      const hasFrom = isFinite(fromParam) && fromParam > 0;
+      // 用户显式给了起止且颠倒，属于参数错误；只是被"不能超过当前时间"夹紧导致颠倒的，按空结果处理
+      if (hasFrom && hasTo && fromParam >= toParam) {
+        return json(res, 400, { error: '起始时间必须早于结束时间' });
       }
+      const toTs = hasTo ? Math.min(toParam, now) : now;
+      const fromTs = hasFrom ? fromParam : (toTs - span);
+      if (fromTs >= toTs) {
+        return json(res, 200, {
+          history: [], range, from: Math.min(fromTs, toTs), to: toTs,
+          device: (() => { const d = store.get(id); return d ? { id: d.id, name: d.name } : null; })(),
+          days: [], allDays: history.listDays(id).length,
+          stats: history.stats(id, fromTs, toTs),
+          elapsedMs: 0, source: 'empty', note: '所选时段在未来，暂无可查数据'
+        });
+      }
+
+      // ---------- CSV 导出：不降采样，全量落表 ----------
+      if (isExport) {
+        const maxRows = Math.max(100, Math.min(500000, Number(url.searchParams.get('max')) || 200000));
+        const { rows, truncated } = history.exportRows(id, fromTs, toTs, maxRows);
+        const dev = store.get(id);
+        const pad = (n) => String(n).padStart(2, '0');
+        const stamp = (ts) => {
+          const d = new Date(ts);
+          return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+            pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+        };
+        const head = ['时间', '供电状态', '输入电压V', '输出电压V', '输出电流A', '输出频率Hz',
+          '有功功率kW', '视在功率kVA', '负载率%', '电池容量%', '电池电压V', '电池电流A',
+          '电池状态', '备电时长min', '环境温度℃', '电池温度℃', '告警数', '故障数'];
+        const cell = (v) => {
+          if (v === null || v === undefined) return '';
+          const s = String(v);
+          return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        };
+        const lines = [head.join(',')];
+        for (const o of rows) {
+          lines.push([
+            stamp(o.ts),
+            (ENUM.supply[o.supply] || o.supply || ''),
+            o.vIn, o.vOut, o.iOut, o.fOut, o.kw, o.kva, o.loadPct,
+            o.battCap, o.battV, o.battI,
+            (ENUM.battery[o.battState] || o.battState || ''),
+            o.backupMin, o.envTemp, o.battTemp, o.alarms, o.faults
+          ].map(cell).join(','));
+        }
+        // BOM：让 Excel 直接按 UTF-8 打开，中文表头不乱码
+        const body = '\ufeff' + lines.join('\r\n') + '\r\n';
+        const d0 = new Date(fromTs), d1 = new Date(toTs);
+        const fname = (dev ? dev.name : id).replace(/[\\/:*?"<>|]/g, '_') + '_' +
+          stamp(fromTs).replace(/[-: ]/g, '') + '-' + stamp(toTs).replace(/[-: ]/g, '') + '.csv';
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="history.csv"; filename*=UTF-8\'\'' + encodeURIComponent(fname),
+          'Content-Length': Buffer.byteLength(body),
+          'Cache-Control': 'no-store',
+          'X-Row-Count': String(rows.length),
+          'X-Truncated': truncated ? '1' : '0'
+        });
+        return res.end(body);
+      }
+
+      // ---------- JSON 查询：内存优先，磁盘补齐 ----------
+      const tStart = Date.now();
+      const mem = r ? r.history.filter(h => h.ts >= fromTs && h.ts <= toTs) : [];
+      let rows = mem.slice();
+      const wantStats = url.searchParams.get('stats') !== '0';
+      let stat = null;
+      if (mem.length < points) {
+        // 取点与统计合并为一次扫描，30 天这类大区间可省掉一遍全量解析
+        const disk = history.readWithStats(id, fromTs, toTs, points, wantStats);
+        const seen = new Set(mem.map(m => m.ts));
+        for (const d of disk.points) if (!seen.has(d.ts)) rows.push(d);
+        rows.sort((a, b) => a.ts - b.ts);
+        stat = disk.stats;
+      }
+      if (!stat && wantStats) stat = history.stats(id, fromTs, toTs);
       if (rows.length > points) {
         const bucket = Math.ceil(rows.length / points);
         const out = [];
@@ -697,10 +803,16 @@ const server = http.createServer(async (req, res) => {
         }
         rows = out;
       }
+      const days = history.listDays(id, fromTs, toTs);
+      const dev = store.get(id);
       return json(res, 200, {
         history: rows, range, from: fromTs, to: toTs,
-        days: history.listDays(id),
-        source: rows.length ? 'disk+mem' : 'empty'
+        device: dev ? { id: dev.id, name: dev.name, model: dev.model || '', site: dev.site || '' } : null,
+        days,
+        allDays: history.listDays(id).length,
+        stats: stat,
+        elapsedMs: Date.now() - tStart,
+        source: rows.length ? (mem.length >= points ? 'mem' : 'mem+disk') : 'empty'
       });
     }
 

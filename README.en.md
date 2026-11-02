@@ -119,7 +119,8 @@ embedded web server that only speaks HTTP/1.0.
 - **Two delivery channels** — WeCom Work group robot (markdown) and email over SMTP (25/587/465)
 - **Metric thresholds** — 9 metrics, three levels, sourced from the vendor manual and national standards;
   violations recolour every surface of the UI
-- **Permanent history** — daily JSONL shards, multi-track charts from 1 hour to 30 days
+- **Permanent history** — daily JSONL shards; any window from 1 hour to 90 days or a custom range, reading only the shards that intersect it (a 1-hour query takes about 10 ms)
+- **History explorer** — eight switchable metrics with hover readout, range summary (avg/peak load, discharge count and duration, bypass time) and CSV export
 - **Asset fields** — site, commissioning date, integrator, model, serial, tags, notes
 - **Identity auto-read** — model and serial number are filled in from the device's own overview when left blank; the device form can pre-read them on demand, firmware version included
 - **Drag to reorder and to group** — mouse drag, touch long-press, plus ↑/↓ buttons as a fallback
@@ -249,7 +250,10 @@ Thresholds are editable under **Alert Management → Metric Thresholds** and can
 | POST | `/api/devices/reorder` | Persist drag order (optional `targetGroupId` also assigns a group) |
 | POST | `/api/devices/:id/poll` | Trigger an immediate poll |
 | POST | `/api/devices/:id/alert-test` | Evaluate rules as if "offline" and push |
-| GET | `/api/history/:id?range=1h\|6h\|24h\|7d\|30d` | History series |
+| GET | `/api/history/:id?range=1h\|6h\|24h\|7d\|30d\|90d&points=600` | History series + range stats (`stats=0` disables stats) |
+| GET | `/api/history/:id?from=&to=` | Custom range (millisecond timestamps) |
+| GET | `/api/history/:id/export?from=&to=` | CSV export (18 columns, UTF-8 BOM, up to 200k rows) |
+| GET | `/api/history` | Coverage overview per device (days available, first/last day, disk usage) |
 | GET | `/api/events?limit=` | Persisted event log |
 | GET/POST | `/api/groups` | Groups |
 | GET/POST | `/api/templates` | Config templates |
