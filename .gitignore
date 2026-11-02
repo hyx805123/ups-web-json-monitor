@@ -4,6 +4,12 @@
 upsmon/data/*
 upsmon-v1-minimal/data/*
 !upsmon/data/devices.example.json
+
+# ===== 本地品牌 / 版权信息（部门名、联系邮箱）=====
+# 只在本机部署显示，绝不入库。需要时手工创建：
+#   upsmon/brand.local.json  ->  {"org":"部门名","contact":"邮箱","year":"2026"}
+upsmon/brand.local.json
+*.local.json
 *.log
 *.jsonl
 

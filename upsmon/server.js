@@ -431,6 +431,21 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, statePayload(url.searchParams.get('groupBy')));
     }
 
+    // ---------- 本地品牌 / 版权信息 ----------
+    // 从 brand.local.json 读取，该文件被 .gitignore 排除，不会随仓库分发
+    if (p === '/api/brand' && m === 'GET') {
+      let brand = {};
+      try {
+        const bf = path.join(ROOT, 'brand.local.json');
+        if (fs.existsSync(bf)) brand = JSON.parse(fs.readFileSync(bf, 'utf8')) || {};
+      } catch (_) { brand = {}; }
+      return json(res, 200, {
+        org: String(brand.org || ''),
+        contact: String(brand.contact || ''),
+        year: String(brand.year || new Date().getFullYear())
+      });
+    }
+
     // ---------- 设置中心 ----------
     if (p === '/api/settings' && m === 'GET') {
       const s = settings.all();

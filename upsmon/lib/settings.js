@@ -103,7 +103,7 @@ function defaults() {
         }
       ]
     },
-    ui: { groupBy: 'none', viewMode: 'tiles', groupBySite: false, groupByModel: false, groupByStatus: false, compact: false },
+    ui: { groupBy: 'none', viewMode: 'tiles', groupBySite: false, groupByModel: false, groupByStatus: false, compact: false, theme: 'dark' },
     thresholds: JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS)),
     auth: { enabled: false, users: [], note: '身份认证与权限管理尚未启用，设计方案见 docs/AUTH-DESIGN.md' }
   };

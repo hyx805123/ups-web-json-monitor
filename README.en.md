@@ -112,6 +112,8 @@ embedded web server that only speaks HTTP/1.0.
 
 - **Zero dependencies** — Node.js standard library only, including a hand-written HTTP/1.0 client and SMTP client
 - **Four dashboard modes** — tile overview / device cards / list / group panels, persisted server-side
+- **Two themes** — Tech Black (default) and Classic White, switchable in System settings, persisted server-side, sharing one layout
+- **Event drawer** — a persistent floating entry in the bottom-right corner with an unread badge, available from any view
 - **Dynamic + static grouping** — by model, site or status automatically; custom groups support drag-to-assign
 - **Alert engine** — 20 fields × 6 operators, with cooldown, repeat reminders and recovery notices
 - **Two delivery channels** — WeCom Work group robot (markdown) and email over SMTP (25/587/465)
