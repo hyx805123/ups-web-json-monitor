@@ -119,6 +119,7 @@ embedded web server that only speaks HTTP/1.0.
   violations recolour every surface of the UI
 - **Permanent history** — daily JSONL shards, multi-track charts from 1 hour to 30 days
 - **Asset fields** — site, commissioning date, integrator, model, serial, tags, notes
+- **Identity auto-read** — model and serial number are filled in from the device's own overview when left blank; the device form can pre-read them on demand, firmware version included
 - **Drag to reorder and to group** — mouse drag, touch long-press, plus ↑/↓ buttons as a fallback
 - **Self-healing** — reconnects after a network outage and records a "back online" event
 - **Rollback build** — a stripped-down variant that only keeps collection and the dashboard

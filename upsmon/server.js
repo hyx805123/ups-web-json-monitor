@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { Store } = require('./lib/store');
 const { Settings } = require('./lib/settings');
-const { VertivITA2, tunnelMissing } = require('./lib/vertiv');
+const { VertivITA2, tunnelMissing, identityOf } = require('./lib/vertiv');
 const { AlertEngine } = require('./lib/alerts');
 const { HistoryStore } = require('./lib/history');
 const thresholds = require('./lib/thresholds');
@@ -117,7 +117,7 @@ class Runner {
     this.timer = null;
     this.stopped = true;
     this.prevSeverity = null;
-    this.modelFilled = false;
+    this.identFilled = false;
   }
 
   start(delay) {
@@ -179,7 +179,7 @@ class Runner {
       this.record(snap, detail);
       this.checkTransitions(snap, detail);
       if (wasDown) pushEvent(this.dev.id, 'ok', this.dev.name + '：已恢复在线');
-      this.autoFillModel(snap);
+      this.autoFillModel(snap, this.client);
       const spent = Date.now() - started;
       this.schedule(Math.max(1000, this.dev.intervalMs - spent));
     } catch (e) {
@@ -201,12 +201,21 @@ class Runner {
     this.schedule(delay);
   }
 
-  // 型号留空时用设备自报型号自动补全，保证"按型号分组"可用
-  autoFillModel(snap) {
-    if (this.modelFilled || this.dev.model || !snap || !snap.model) return;
-    this.dev.model = snap.model;
-    this.modelFilled = true;
+  // 型号 / 序列号留空时，用设备自报的信息自动补全（只补空字段，不覆盖手工填写的值）
+  autoFillModel(snap, client) {
+    if (this.identFilled || !snap) return;
+    const ip = client || this.client;
+    const ident = (ip && ip.lastHome) ? identityOf(ip.lastHome) : null;
+    const patch = {};
+    if (!this.dev.model && snap.model) patch.model = snap.model;
+    if (!this.dev.serial && ident && ident.serial) patch.serial = ident.serial;
+    if (!Object.keys(patch).length) return;
+    for (const k of Object.keys(patch)) this.dev[k] = patch[k];
+    this.identFilled = true;
     try { store.save(); } catch (_) {}
+    if (patch.serial) {
+      pushEvent(this.dev.id, 'info', this.dev.name + '：已从设备读取序列号 ' + patch.serial);
+    }
   }
 
   record(snap, detail) {
@@ -679,17 +688,26 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/test' && m === 'POST') {
       const body = await readBody(req);
       if (!body.host) return json(res, 400, { error: '缺少 IP 地址' });
+      // 编辑已有设备时允许不重填密码：从库里取用已保存的凭据
+      let password = body.password || '';
+      let username = body.username || 'user';
+      if (!password && body.deviceId) {
+        const cur = store.get(String(body.deviceId));
+        if (cur) { password = cur.password || ''; username = cur.username || username; }
+      }
       const client = new VertivITA2({
         host: String(body.host).trim(),
         port: Number(body.port) || 80,
-        username: body.username || 'user',
-        password: body.password || ''
+        username: username,
+        password: password
       });
       const t0 = Date.now();
       try {
         const snap = await client.poll({ detail: true });
         const ms = Date.now() - t0;
-        return json(res, 200, { ok: true, ms, snap });
+        // 顺带把设备自报的型号 / 序列号 / 固件回给前端，供表单自动填充
+        const identity = identityOf(client.lastHome);
+        return json(res, 200, { ok: true, ms, snap, identity });
       } catch (e) {
         return json(res, 200, { ok: false, error: e.message, code: e.code || null, ms: Date.now() - t0 });
       }

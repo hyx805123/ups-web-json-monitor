@@ -246,6 +246,9 @@ class VertivITA2 {
       } else { throw e; }
     }
 
+    // 留一份原始概览，供身份信息提取（型号 / 序列号 / 固件版本）使用
+    this.lastHome = home;
+
     const extra = {};
     if (detail) {
       const paths = {
@@ -415,4 +418,67 @@ function evaluate(s) {
   return { level: sev, issues };
 }
 
-module.exports = { VertivITA2, normalize, ENUM, classifyNet, tunnelMissing };
+// ---- 身份信息提取：型号 / 序列号 / 固件版本 ----
+// 设备自报字段名在不同固件版本间不统一（SN / SerialNo / PrdSN …），
+// 所以这里先用候选键精确匹配，再对整棵 JSON 做深度扫描兜底，
+// 并把命中的候选键一起返回，方便定位真实字段名。
+const SN_KEY_RE = /(^|_|\b)(sn|serial|serialno|serialnum|serialnumber|devicesn|prdsn|sncode|deviceserial)($|_|\b)/i;
+const FW_KEY_RE = /(firmware|fwversion|fwver|swversion|softwareversion|^version$)/i;
+
+function normKey(k) {
+  return String(k || '').toLowerCase().replace(/[\s_-]/g, '');
+}
+
+function looksLikeSerial(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (s.length < 4 || s.length > 48) return false;
+  if (!/\d/.test(s)) return false;          // 序列号一定含数字
+  if (/^\d{10,13}$/.test(s)) return false;  // 纯时间戳不算
+  return true;
+}
+
+function deepScan(obj, path, out, depth) {
+  if (!obj || typeof obj !== 'object' || depth > 6) return;
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    const p = path ? path + '.' + k : k;
+    if (v && typeof v === 'object') { deepScan(v, p, out, depth + 1); continue; }
+    if (v === null || v === undefined) continue;
+    const nk = normKey(k);
+    if (SN_KEY_RE.test(k) && looksLikeSerial(v)) out.serial.push({ key: p, value: String(v).trim(), rawKey: k });
+    if (FW_KEY_RE.test(nk) && String(v).length <= 24) out.firmware.push({ key: p, value: String(v).trim(), rawKey: k });
+  }
+}
+
+function identityOf(home) {
+  const res = { model: '', serial: '', serialKey: '', firmware: '', firmwareKey: '', candidates: { serial: [], firmware: [] } };
+  if (!home || typeof home !== 'object') return res;
+  const O = home.Other || {};
+  res.model = String(O.PrdType || O.Model || O.ProductType || '').trim();
+  const out = { serial: [], firmware: [] };
+  deepScan(home, '', out, 0);
+  res.candidates.serial = out.serial.slice(0, 12);
+  res.candidates.firmware = out.firmware.slice(0, 8);
+  // 优先取 Other 段下的命中项（机型铭牌信息都在这一层）
+  const pickFrom = (list) => list.find(c => /^Other\./.test(c.key)) || list[0];
+  const s = pickFrom(out.serial);
+  if (s) { res.serial = s.value; res.serialKey = s.key; }
+  const f = pickFrom(out.firmware);
+  if (f) { res.firmware = f.value; res.firmwareKey = f.key; }
+  // 没找到序列号时，把概览接口里出现过的字段名回传，便于定位真实字段
+  if (!res.serial) {
+    const keys = [];
+    (function collect(obj, path, depth) {
+      if (!obj || typeof obj !== 'object' || depth > 3 || keys.length > 120) return;
+      for (const k of Object.keys(obj)) {
+        const p = path ? path + '.' + k : k;
+        keys.push(p);
+        if (obj[k] && typeof obj[k] === 'object') collect(obj[k], p, depth + 1);
+      }
+    })(home, '', 0);
+    res.diag = { keys: keys.slice(0, 120) };
+  }
+  return res;
+}
+
+module.exports = { VertivITA2, normalize, ENUM, classifyNet, tunnelMissing, identityOf };

@@ -576,14 +576,19 @@ async function api(url, opt){
 }
 
 /* ---------------- 通用表单弹层 ---------------- */
+let sheetDirty = false;   // 弹层内是否有未保存的改动
 function openSheet(opts){
   $("sheet").className = "sheet" + (opts.narrow?" narrow":"");
   $("sheetTitle").textContent = opts.title;
   $("sheetBody").innerHTML = opts.html || "";
   $("sheetFoot").innerHTML = "";
+  sheetDirty = false;
+  // 任何输入/选择都标记为已改动：点遮罩空白处不再直接丢弃填写内容
+  $("sheetBody").oninput = ()=>{ sheetDirty = true; };
+  $("sheetBody").onchange = ()=>{ sheetDirty = true; };
   const cancel = document.createElement("button");
   cancel.className = "btn"; cancel.textContent = "取消";
-  cancel.onclick = closeSheet;
+  cancel.onclick = ()=>closeSheet();
   $("sheetFoot").appendChild(cancel);
   if (opts.submitText !== null) {
     const ok = document.createElement("button");
@@ -600,11 +605,30 @@ function openSheet(opts){
   const first = $("sheetBody").querySelector("input,select,textarea");
   if(first) setTimeout(()=>first.focus(),60);
 }
-function closeSheet(){ $("mask").classList.remove("on"); }
-$("sheetX").onclick = closeSheet;
-$("mask").addEventListener("click", e=>{ if(e.target===$("mask")) closeSheet(); });
+// force=true 时不询问（保存成功、或确认放弃后调用）
+function closeSheet(force){
+  if(!force && sheetDirty){
+    if(!window.confirm("表单内容尚未保存，确定要放弃吗？")) return;
+  }
+  sheetDirty = false;
+  $("mask").classList.remove("on");
+}
+// 点遮罩空白处 / 按 Esc：没改过就关，改过则保留内容并提示
+function requestCloseSheet(){
+  if(sheetDirty){
+    toast("已保留填写内容 —— 如需关闭请点「取消」或右上角 ×");
+    return;
+  }
+  closeSheet(true);
+}
+$("sheetX").onclick = ()=>closeSheet();
+$("mask").addEventListener("click", e=>{ if(e.target===$("mask")) requestCloseSheet(); });
 
 function fieldHtml(f, val){
+  if(f.type==="button"){
+    return '<div class="f"><button class="btn" type="button" id="fld_'+f.key+'">'+esc(f.text||f.label||"")+'</button>'+
+      (f.hint?'<div class="hint">'+f.hint+'</div>':'')+'</div>';
+  }
   const v = val===undefined||val===null?"":val;
   let inner="";
   if(f.type==="select"){
@@ -644,6 +668,7 @@ function buildForm(fields, values){
 }
 function collectOne(f,out){
   if(!f) return;
+  if(f.type==="button") return;   // 按钮字段不参与取值
   const el = $("fld_"+f.key);
   if(!el) return;
   if(f.type==="switch") out[f.key]=el.checked;
@@ -660,7 +685,11 @@ function collectForm(fields, values){
 }
 function bindChips(root){
   root.querySelectorAll(".chip").forEach(c=>{
-    c.onclick=()=>{ c.classList.toggle("on"); const ck=c.querySelector(".ck"); if(ck) ck.textContent=c.classList.contains("on")?"✓":""; };
+    c.onclick=()=>{
+      c.classList.toggle("on"); const ck=c.querySelector(".ck");
+      if(ck) ck.textContent=c.classList.contains("on")?"✓":"";
+      sheetDirty = true;   // 标签/分组属于表单内容，同样计入"未保存"
+    };
   });
 }
 
@@ -1548,7 +1577,9 @@ function openDeviceForm(id){
       {key:"integrator",label:"服务商（集成商）",placeholder:"例如：某某电气工程有限公司"}]},
     {type:"row",keys:["model","serial"],fields:[
       {key:"model",label:"设备型号",hint:"留空时自动读取设备自报型号"},
-      {key:"serial",label:"出厂序列号",placeholder:"可选"}]},
+      {key:"serial",label:"出厂序列号",placeholder:"留空自动读取"}]},
+    {key:"probe",type:"button",text:"从设备读取型号 / 序列号",
+      hint:"按上面填写的 IP、账号、密码连一次设备，把读到的型号与 SN 填进上方空字段；保存后首次采集也会自动补齐"},
     {key:"commissionDate",label:"上线日期",type:"date"},
     {type:"row",keys:["intervalMs","enabled"],fields:[
       {key:"intervalMs",label:"采集间隔（毫秒）",type:"number"},
@@ -1582,6 +1613,33 @@ function openDeviceForm(id){
         if(def.enabled!==undefined&&$("fld_enabled")) $("fld_enabled").checked=!!def.enabled;
         toast("已套用模板「"+t.name+"」");
       };
+
+      const probeBtn=$("fld_probe");
+      if(probeBtn) probeBtn.onclick=async()=>{
+        const host=($("fld_host").value||"").trim();
+        const port=Number($("fld_port").value)||80;
+        const username=($("fld_username").value||"user").trim();
+        const password=$("fld_password").value||"";
+        if(!host){ toast("请先填写 IP 地址"); return; }
+        if(!password && !editingId){ toast("请先填写网页密码"); return; }
+        const old=probeBtn.textContent;
+        probeBtn.disabled=true; probeBtn.textContent="读取中…";
+        try{
+          const body={host:host,port:port,username:username,password:password};
+          if(editingId) body.deviceId=editingId;   // 编辑时允许沿用已保存的密码
+          const r=await api("/api/test",{method:"POST",body:JSON.stringify(body)});
+          if(!r.ok){ toast("读取失败："+(r.error||"未知错误")); return; }
+          const idr=r.identity||{};
+          const model=idr.model||(r.snap&&r.snap.model)||"";
+          const filled=[];
+          if(model&&!$("fld_model").value){ $("fld_model").value=model; filled.push("型号 "+model); }
+          if(idr.serial&&!$("fld_serial").value){ $("fld_serial").value=idr.serial; filled.push("序列号 "+idr.serial); }
+          if(filled.length){ sheetDirty=true; toast("已读取并填入："+filled.join("，")); }
+          else if(model||idr.serial){ toast("连接正常，字段已有内容，未覆盖"); }
+          else { toast("连接正常，但设备未返回序列号（型号 "+(model||"未知")+"）"); }
+        }catch(e){ toast(e.message); }
+        finally{ probeBtn.disabled=false; probeBtn.textContent=old; }
+      };
     },
     async onSubmit(){
       const v=collectForm(fields,values);
@@ -1597,7 +1655,7 @@ function openDeviceForm(id){
       if(!id && !payload.password){ toast("请填写网页密码"); throw new Error("缺少密码"); }
       if(id) await api("/api/devices/"+id,{method:"PUT",body:JSON.stringify(payload)});
       else await api("/api/devices",{method:"POST",body:JSON.stringify(payload)});
-      closeSheet(); toast(id?"已保存":"已添加，正在建立会话"); await refresh();
+      closeSheet(true); toast(id?"已保存":"已添加，正在建立会话"); await refresh();
     }
   });
 }
@@ -1625,7 +1683,7 @@ function openGroupForm(id){
       if(!v.name){ toast("请填写分组名称"); throw new Error("缺少名称"); }
       if(id) await api("/api/groups/"+id,{method:"PUT",body:JSON.stringify(v)});
       else await api("/api/groups",{method:"POST",body:JSON.stringify(v)});
-      closeSheet(); toast("已保存"); await refresh();
+      closeSheet(true); toast("已保存"); await refresh();
     }
   });
 }
@@ -1665,7 +1723,7 @@ function openTemplateForm(id){
       }};
       if(id) await api("/api/templates/"+id,{method:"PUT",body:JSON.stringify(payload)});
       else await api("/api/templates",{method:"POST",body:JSON.stringify(payload)});
-      closeSheet(); toast("已保存"); await refresh();
+      closeSheet(true); toast("已保存"); await refresh();
     }
   });
 }
@@ -1727,7 +1785,7 @@ function openChannelForm(id){
       if(!payload.name){ toast("请填写渠道名称"); throw new Error("缺少名称"); }
       if(id) await api("/api/channels/"+id,{method:"PUT",body:JSON.stringify(payload)});
       else await api("/api/channels",{method:"POST",body:JSON.stringify(payload)});
-      closeSheet(); toast("已保存"); await refresh();
+      closeSheet(true); toast("已保存"); await refresh();
     }
   });
 }
@@ -1803,7 +1861,7 @@ function openRuleForm(id){
       if(!payload.conditions.length){ toast("至少添加一个触发条件"); throw new Error("缺少条件"); }
       if(id) await api("/api/rules/"+id,{method:"PUT",body:JSON.stringify(payload)});
       else await api("/api/rules",{method:"POST",body:JSON.stringify(payload)});
-      closeSheet(); toast("已保存"); await refresh();
+      closeSheet(true); toast("已保存"); await refresh();
     }
   });
 }
@@ -2257,7 +2315,12 @@ document.addEventListener("click", async ev=>{
 document.querySelectorAll("#mask-detail").forEach(m=>{
   m.addEventListener("click",e=>{ if(e.target===m){ m.classList.remove("on"); detailId=null; } });
 });
-document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ $("mask").classList.remove("on"); $("mask-detail").classList.remove("on"); detailId=null; } });
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Escape") return;
+  // Esc 与点遮罩一致：未改动直接关，改过则保留内容
+  if($("mask").classList.contains("on")) requestCloseSheet();
+  if($("mask-detail").classList.contains("on")){ $("mask-detail").classList.remove("on"); detailId=null; }
+});
 
 function loop(){ clearTimeout(loopTimer); loopTimer=setTimeout(async()=>{ await refresh(); updateRetryCountdowns(); loop(); }, 5000); }
 refresh().then(loop);
