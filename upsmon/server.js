@@ -118,6 +118,8 @@ class Runner {
     this.stopped = true;
     this.prevSeverity = null;
     this.identFilled = false;
+    this.identTries = 0;         // 铭牌读取失败次数，用于指数退避
+    this.identNextAt = 0;        // 下次尝试读取铭牌的时间戳
   }
 
   start(delay) {
@@ -179,7 +181,7 @@ class Runner {
       this.record(snap, detail);
       this.checkTransitions(snap, detail);
       if (wasDown) pushEvent(this.dev.id, 'ok', this.dev.name + '：已恢复在线');
-      this.autoFillModel(snap, this.client);
+      await this.autoFillModel(snap, this.client);
       const spent = Date.now() - started;
       this.schedule(Math.max(1000, this.dev.intervalMs - spent));
     } catch (e) {
@@ -202,20 +204,43 @@ class Runner {
   }
 
   // 型号 / 序列号留空时，用设备自报的信息自动补全（只补空字段，不覆盖手工填写的值）
-  autoFillModel(snap, client) {
+  // 注意：序列号不在概览 JSON 里，只在「关于」页的 HTML 表格中，需要单独取一次。
+  async autoFillModel(snap, client) {
     if (this.identFilled || !snap) return;
     const ip = client || this.client;
-    const ident = (ip && ip.lastHome) ? identityOf(ip.lastHome) : null;
     const patch = {};
+
+    // 型号：概览接口的 Other.PrdType 就够用，先填上，避免分组缺值
     if (!this.dev.model && snap.model) patch.model = snap.model;
-    if (!this.dev.serial && ident && ident.serial) patch.serial = ident.serial;
-    if (!Object.keys(patch).length) return;
-    for (const k of Object.keys(patch)) this.dev[k] = patch[k];
-    this.identFilled = true;
-    try { store.save(); } catch (_) {}
-    if (patch.serial) {
-      pushEvent(this.dev.id, 'info', this.dev.name + '：已从设备读取序列号 ' + patch.serial);
+
+    if (!this.dev.serial && Date.now() >= this.identNextAt) {
+      let about = null;
+      try {
+        about = ip && typeof ip.readAbout === 'function' ? await ip.readAbout() : null;
+      } catch (_) { /* 读不到就走退避，不打断采集 */ }
+      if (about) {
+        if (!this.dev.model && about.model) patch.model = about.model;
+        if (!this.dev.serial && about.serial) patch.serial = about.serial;
+      }
     }
+
+    if (Object.keys(patch).length) {
+      for (const k of Object.keys(patch)) this.dev[k] = patch[k];
+      this.identFilled = !!(this.dev.serial || this.dev.model);
+      try { store.save(); } catch (_) {}
+      if (patch.serial) {
+        pushEvent(this.dev.id, 'info', this.dev.name + '：已从设备读取序列号 ' + patch.serial);
+      }
+      return;
+    }
+
+    if (this.dev.serial) { this.identFilled = true; return; }
+
+    // 没读到：设备可能确实不提供该字段，指数退避，最长 30 分钟再试一次，
+    // 避免每 10 秒去翻一次设备网页
+    this.identTries++;
+    const delay = Math.min(60000 * Math.pow(2, this.identTries - 1), 30 * 60000);
+    this.identNextAt = Date.now() + delay;
   }
 
   record(snap, detail) {
@@ -703,6 +728,29 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/test' && m === 'POST') {
       const body = await readBody(req);
       if (!body.host) return json(res, 400, { error: '缺少 IP 地址' });
+
+      // 编辑已有设备时优先复用该设备已登录的会话：
+      // ITA2 的网页会话槽极少，另起一个会话大概率被设备拒绝（"Too many users on-line"）
+      if (body.deviceId) {
+        const r = runners.get(String(body.deviceId));
+        if (r && r.client && r.client.sid) {
+          const t0 = Date.now();
+          try {
+            const about = await r.client.readAbout().catch(() => null);
+            const identity = identityOf(r.client.lastHome);
+            if (about) {
+              if (about.serial) { identity.serial = about.serial; identity.serialKey = 'about.SerlNo'; }
+              if (!identity.model && about.model) identity.model = about.model;
+              if (!identity.firmware && about.firmware) identity.firmware = about.firmware;
+              identity.about = about;
+            }
+            return json(res, 200, { ok: true, ms: Date.now() - t0, snap: r.snap, identity, reused: true });
+          } catch (e) {
+            return json(res, 200, { ok: false, error: e.message, code: e.code || null, ms: Date.now() - t0 });
+          }
+        }
+      }
+
       // 编辑已有设备时允许不重填密码：从库里取用已保存的凭据
       let password = body.password || '';
       let username = body.username || 'user';
@@ -719,11 +767,23 @@ const server = http.createServer(async (req, res) => {
       const t0 = Date.now();
       try {
         const snap = await client.poll({ detail: true });
+        // 序列号只在「关于」页（HTML 表格）里，JSON 概览没有，单独取一次
+        let about = null;
+        try { about = await client.readAbout(); } catch (_) {}
         const ms = Date.now() - t0;
         // 顺带把设备自报的型号 / 序列号 / 固件回给前端，供表单自动填充
         const identity = identityOf(client.lastHome);
+        if (about) {
+          if (about.serial) { identity.serial = about.serial; identity.serialKey = 'about.SerlNo'; }
+          if (!identity.model && about.model) identity.model = about.model;
+          if (!identity.firmware && about.firmware) identity.firmware = about.firmware;
+          identity.about = about;
+        }
+        // 测试连接是一次性会话，用完即释放，别占设备那点可怜的会话槽
+        await client.logout().catch(() => {});
         return json(res, 200, { ok: true, ms, snap, identity });
       } catch (e) {
+        await client.logout().catch(() => {});
         return json(res, 200, { ok: false, error: e.message, code: e.code || null, ms: Date.now() - t0 });
       }
     }

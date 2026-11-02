@@ -228,6 +228,33 @@ class VertivITA2 {
     }
   }
 
+  // 铭牌信息（序列号 / 固件版本 / MAC / 保修到期）只存在于「关于」页面，
+  // 该页面是服务端渲染的 HTML 表格，JSON 接口里没有这些字段 ——
+  // 实测 /_com/about/about.json 仅返回 StartUpTime / isLocalPrd / ModuleType。
+  // 因此这里直接取 HTML 并按 tr 的 id 解析，语言无关（CH / EN 页面 id 相同）。
+  async readAbout() {
+    if (!this.sid) await this.login();
+    let lastErr = null;
+    for (const p of ['/CH/about/about.shtml', '/EN/about/about.shtml']) {
+      try {
+        const r = await request(this._opts({
+          method: 'GET',
+          path: p,
+          timeout: 10000,
+          headers: { Cookie: 'SID=' + this.sid, Referer: 'http://' + this.host + '/' }
+        }));
+        const html = r.body || '';
+        if (!/about_tr_\w+/.test(html)) {
+          const e = new Error('关于页未返回铭牌表格 (status ' + r.status + ')');
+          e.code = r.status === 404 ? 'NOT_FOUND' : 'SESSION_LOST';
+          throw e;
+        }
+        return parseAboutHtml(html);
+      } catch (e) { lastErr = e; }
+    }
+    throw classifyNet(lastErr, this.host);
+  }
+
   // detail=false 时只拉概览，detail=true 时补齐 5 个明细接口
   async poll(opts) {
     const detail = !!(opts && opts.detail);
@@ -481,4 +508,47 @@ function identityOf(home) {
   return res;
 }
 
-module.exports = { VertivITA2, normalize, ENUM, classifyNet, tunnelMissing, identityOf };
+// 「关于」页表格字段 → 语义键。id 形如 about_tr_SerlNo（设备固件拼写为 SerlNo，不是 SerialNo）。
+const ABOUT_ID_MAP = {
+  PrdType: 'model',
+  SerlNo: 'serial', Serial: 'serial', SerialNo: 'serial', SN: 'serial',
+  MonVer: 'fwMonitor',
+  InvVer: 'fwInv',
+  RctVer: 'fwRect',
+  MAC: 'mac',
+  SvcExpireDate: 'warranty',
+  StartUpTime: 'startup',
+  Hotline: 'hotline'
+};
+
+// 解析「关于」页 HTML 表格，返回 { model, serial, firmware, ... }
+function parseAboutHtml(html) {
+  const out = {};
+  if (!html || typeof html !== 'string') return out;
+  const rowRe = /<tr[^>]*id\s*=\s*"about_tr_(\w+)"[^>]*>([\s\S]*?)<\/tr>/gi;
+  let m;
+  while ((m = rowRe.exec(html))) {
+    const id = m[1];
+    const cell = m[2].match(/<td[^>]*class\s*=\s*"[^"]*\bvalue\b[^"]*"[^>]*>([\s\S]*?)<\/td>/i);
+    let val = cell ? cell[1] : '';
+    val = val
+      .replace(/<[^>]*>/g, ' ')          // 去掉内嵌标签（如 MIB 链接的 <a>）
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!val) continue;
+    out[ABOUT_ID_MAP[id] || id] = val;
+  }
+  // 固件版本：监控版为主，缺则退回逆变/整流版
+  if (!out.firmware) {
+    const fw = out.fwMonitor || out.fwInv || out.fwRect;
+    if (fw) out.firmware = fw;
+  }
+  return out;
+}
+
+module.exports = { VertivITA2, normalize, ENUM, classifyNet, tunnelMissing, identityOf, parseAboutHtml };

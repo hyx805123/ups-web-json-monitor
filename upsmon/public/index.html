@@ -1851,7 +1851,12 @@ function openDeviceForm(id){
           const filled=[];
           if(model&&!$("fld_model").value){ $("fld_model").value=model; filled.push("型号 "+model); }
           if(idr.serial&&!$("fld_serial").value){ $("fld_serial").value=idr.serial; filled.push("序列号 "+idr.serial); }
+          // 字段已有值时只提示不覆盖，但把设备的真实值说出来，便于发现填错
+          const diff=[];
+          if(model&&$("fld_model").value&&$("fld_model").value!==model) diff.push("型号 "+model);
+          if(idr.serial&&$("fld_serial").value&&$("fld_serial").value!==idr.serial) diff.push("序列号 "+idr.serial);
           if(filled.length){ sheetDirty=true; toast("已读取并填入："+filled.join("，")); }
+          else if(diff.length){ toast("设备实际为 "+diff.join("，")+"（当前内容不同，未覆盖）"); }
           else if(model||idr.serial){ toast("连接正常，字段已有内容，未覆盖"); }
           else { toast("连接正常，但设备未返回序列号（型号 "+(model||"未知")+"）"); }
         }catch(e){ toast(e.message); }
