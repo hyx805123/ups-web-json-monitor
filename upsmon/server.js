@@ -774,7 +774,12 @@ const server = http.createServer(async (req, res) => {
       let rows = mem.slice();
       const wantStats = url.searchParams.get('stats') !== '0';
       let stat = null;
-      if (mem.length < points) {
+      // 内存只是最近 HISTORY_MAX 点的滚动窗口（10s 间隔约 10 小时），点数够不代表覆盖得住
+      // 整个区间。只有「点数够」且「内存起点不晚于查询左边界」时才能只靠内存，
+      // 否则 7 天/30 天这类大区间会退化成最后那 10 小时。左边留 60s 容差，
+      // 避免恰好在采样间隙上多读一次磁盘。
+      const memCoversFrom = mem.length > 0 && mem[0].ts <= fromTs + 60000;
+      if (mem.length < points || !memCoversFrom) {
         // 取点与统计合并为一次扫描，30 天这类大区间可省掉一遍全量解析
         const disk = history.readWithStats(id, fromTs, toTs, points, wantStats);
         const seen = new Set(mem.map(m => m.ts));
@@ -812,7 +817,7 @@ const server = http.createServer(async (req, res) => {
         allDays: history.listDays(id).length,
         stats: stat,
         elapsedMs: Date.now() - tStart,
-        source: rows.length ? (mem.length >= points ? 'mem' : 'mem+disk') : 'empty'
+        source: rows.length ? (mem.length >= points && memCoversFrom ? 'mem' : 'mem+disk') : 'empty'
       });
     }
 

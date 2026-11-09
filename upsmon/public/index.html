@@ -570,6 +570,7 @@
             <button data-r="7d">7 天</button>
             <button data-r="30d">30 天</button>
             <button data-r="90d">90 天</button>
+            <button data-r="all">全部</button>
             <button data-r="custom">自定义</button>
           </div>
           <label class="hfield">起 <input type="datetime-local" id="histFrom" disabled></label>
@@ -2561,12 +2562,26 @@ function histBytes(n){
   if(n<1073741824) return (n/1048576).toFixed(1)+" MB";
   return (n/1073741824).toFixed(2)+" GB";
 }
+// 概览里的 firstDay 形如 2026-11-02，按本地零点解析（new Date("2026-11-02") 会当成 UTC）
+function histDayStart(s){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||"");
+  return m?new Date(Number(m[1]),Number(m[2])-1,Number(m[3])).getTime():null;
+}
+function histFirstDayTs(){
+  const ov=((HIST.overview&&HIST.overview.devices)||[]).find(x=>x.id===HIST.devId);
+  return ov?histDayStart(ov.firstDay):null;
+}
 function histRange(){
   const now=Date.now();
   if(HIST.range==="custom"){
     const f=histParseInput($("histFrom").value), t=histParseInput($("histTo").value);
     if(f&&t&&t>f) return {from:f, to:t};
     return {from:now-24*3600e3, to:now};
+  }
+  if(HIST.range==="all"){
+    // 全部历史：从最早分片那天的零点开始；概览还没拿到时先按 30 天兜底
+    const first=histFirstDayTs();
+    return {from:(first!=null&&first<now)?first:now-30*24*3600e3, to:now};
   }
   const span=HIST_SPAN[HIST.range]||3600e3;
   return {from:now-span, to:now};
@@ -2616,6 +2631,10 @@ async function histQuery(){
   if(!devId){ toast("还没有可查询的设备"); return; }
   HIST.devId=devId;
   HIST.points=Number($("histPoints").value)||1200;
+  // 「全部」的起点来自概览接口，首次点选时先把它取回来
+  if(HIST.range==="all"&&!HIST.overview){
+    try{ HIST.overview=await api("/api/history"); HIST.overviewAt=Date.now(); }catch(_){ /* 取不到就按 30 天兜底 */ }
+  }
   const {from,to}=histRange();
   if(from>=to){ toast("起始时间必须早于结束时间"); return; }
 
