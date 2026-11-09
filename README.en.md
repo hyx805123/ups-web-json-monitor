@@ -285,11 +285,13 @@ battery state `0` no battery / `1` float / `2` equalise / `3` discharging / `4` 
 
 ## Known limitations
 
-- **Firmware version is unavailable** — neither SNMP nor the web UI exposes it; the UI says so explicitly
+- **Model / serial number come from the "About" page** — parsed by row id from `/CH/about/about.shtml`; a firmware that renames those ids will read as blank
 - **Battery temperature / humidity need optional sensors** — shown as "not supported" when absent
 - **No authentication yet** — the console is open on the LAN; see [`docs/AUTH-DESIGN.md`](docs/AUTH-DESIGN.md)
 - **No service install / EXE packaging** — must be started manually
 - **Plain HTTP** to the devices, and credentials sit in `data/devices.json` (redacted in API output); LAN use only
+- **No log files** — output goes to the console only, with no levels or daily rotation
+- **Archiving and retention are local-only** — `.jsonl.gz` has no off-host copy, and retention deletes irreversibly
 
 ---
 
@@ -298,7 +300,9 @@ battery state `0` no battery / `1` float / `2` equalise / `3` discharging / `4` 
 See [`docs/CMDB-ROADMAP.md`](docs/CMDB-ROADMAP.md) for the full backlog across seven categories,
 prioritised into three tiers: service install & backups & bulk import & basic auth first,
 then contracts, reporting, battery health and ticketing, then inspections, energy analytics and
-predictive maintenance.
+predictive maintenance. As of v1.5.1 there are **41 open items**, plus 6 engineering debts under
+category H (missing-data gaps in charts, history indexing, downsampling loss, About-page parsing,
+plaintext credentials, no off-host backup).
 
 ---
 
