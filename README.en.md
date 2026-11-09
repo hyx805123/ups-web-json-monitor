@@ -4,7 +4,15 @@
 
 A lightweight monitoring system for Vertiv Liebert ITA2 series UPS units, collecting runtime data through the device's built-in web JSON endpoints
 
-Node.js ≥ 18 · Single process · Zero third-party dependencies · Validated at 30–40 devices
+<p>
+  <a href="https://github.com/hyx805123/ups-web-json-monitor/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/hyx805123/ups-web-json-monitor?style=flat-square&amp;label=release&amp;color=2f6f44"></a>
+  <a href="https://github.com/hyx805123/ups-web-json-monitor/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/hyx805123/ups-web-json-monitor/ci.yml?branch=main&amp;style=flat-square&amp;label=CI"></a>
+  <img alt="Node.js version" src="https://img.shields.io/badge/node-%E2%89%A5%2018-339933?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/hyx805123/ups-web-json-monitor?style=flat-square&amp;label=license"></a>
+  <img alt="Dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square">
+</p>
+
+Single process · Zero third-party dependencies · Validated at 30–40 devices
 
 [Overview](#overview) · [Features](#features) · [Architecture](#architecture) · [Quick start](#quick-start) · [REST API](#rest-api) · [Release history](#release-history)
 
@@ -185,6 +193,27 @@ PORT=9000 UPS_DATA_DIR=/var/lib/upsmon node upsmon/server.js
 
 ---
 
+## Development and testing
+
+Two dependency-free checks ship with the repository; CI invokes the same entry points.
+
+```bash
+npm test          # static check + smoke test
+npm run check     # static check only
+npm run smoke     # smoke test only
+```
+
+| Command | Scope |
+|---|---|
+| `node upsmon/tools/ci-check.js` | Runs `node --check` over every `.js` file, compiles the inline scripts in `index.html`, and verifies `<style>` tags are balanced and not duplicated |
+| `node upsmon/tools/smoke.js` | Starts the server against a temporary `UPS_DATA_DIR` and verifies `/api/brand`, `/api/state`, `/api/history` and the static index before exiting |
+
+The smoke test uses an isolated temporary data directory: it never reads or writes `upsmon/data/` and never contacts a real device, so it runs offline.
+
+CI is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Static checks run on Node.js 18, 20 and 22; the smoke test additionally runs once on Windows to cover `start.bat` and path handling.
+
+---
+
 ## Repository layout
 
 ```
@@ -195,6 +224,7 @@ PORT=9000 UPS_DATA_DIR=/var/lib/upsmon node upsmon/server.js
 ├─ package.json
 ├─ LICENSE
 ├─ screenshots/              Documentation images
+├─ .github/workflows/ci.yml  Continuous integration: static check and smoke test
 ├─ docs/
 │  ├─ AUTH-DESIGN.md         Authentication and RBAC design (not implemented)
 │  └─ CMDB-ROADMAP.md        Feature backlog and engineering debt
@@ -202,7 +232,7 @@ PORT=9000 UPS_DATA_DIR=/var/lib/upsmon node upsmon/server.js
 │  ├─ server.js              HTTP server, scheduler, config centre, alerting, REST API
 │  ├─ lib/                   Driver, storage, alerting, history and archive modules
 │  ├─ public/index.html      Single-file front end
-│  ├─ tools/                 Test-data generator
+│  ├─ tools/                 ci-check.js, smoke.js, test-data generator
 │  ├─ brand.local.json       Local branding (git-ignored; footer hidden when absent)
 │  ├─ data/                  Runtime data (git-ignored, contains credentials)
 │  └─ start.bat

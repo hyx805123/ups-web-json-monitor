@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node upsmon/server.js",
     "start:minimal": "node upsmon-v1-minimal/server.js",
+    "check": "node upsmon/tools/ci-check.js",
+    "smoke": "node upsmon/tools/smoke.js",
+    "test": "npm run check && npm run smoke",
     "make-test-devices": "node upsmon/tools/make-test-devices.js"
   },
   "keywords": [

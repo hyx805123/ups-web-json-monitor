@@ -2,6 +2,22 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)：`主版本.次版本.修订号`。
 
+## [未发布]
+
+### 新增
+
+- **持续集成**（`.github/workflows/ci.yml`）：静态检查覆盖 Node.js 18 / 20 / 22，
+  冒烟测试在 Linux 与 Windows 各跑一次，push 与 PR 触发。
+- **检查脚本**：`upsmon/tools/ci-check.js` 对全部 `.js` 执行 `node --check`、编译
+  `index.html` 内联脚本、校验 `<style>` 标签配平；`upsmon/tools/smoke.js` 以临时
+  `UPS_DATA_DIR` 启动服务并验证四个端点后退出。`npm test` 串联两者。
+- **README 状态徽章**：版本、CI 状态、Node.js 版本、许可证、依赖数量。
+
+### 变更
+
+- `LICENSE` 移出商标说明，仅保留标准 MIT 文本（GitHub 许可证识别需纯许可正文）；
+  商标与免责声明仍保留在本 README 的「商标与免责声明」一节。
+
 ## [1.5.1] - 2026-11-09
 
 历史查询页的三相指标是「无差别铺给所有设备」的：单相 UPS 也被塞了三颗

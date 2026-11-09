@@ -4,7 +4,15 @@
 
 面向 Vertiv Liebert ITA2 系列 UPS 的轻量级监控系统，通过设备内建 Web JSON 接口采集运行数据
 
-Node.js ≥ 18 · 单进程 · 零第三方依赖 · 已验证 30~40 台设备规模
+<p>
+  <a href="https://github.com/hyx805123/ups-web-json-monitor/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/hyx805123/ups-web-json-monitor?style=flat-square&amp;label=release&amp;color=2f6f44"></a>
+  <a href="https://github.com/hyx805123/ups-web-json-monitor/actions/workflows/ci.yml"><img alt="CI 状态" src="https://img.shields.io/github/actions/workflow/status/hyx805123/ups-web-json-monitor/ci.yml?branch=main&amp;style=flat-square&amp;label=CI"></a>
+  <img alt="Node.js 版本" src="https://img.shields.io/badge/node-%E2%89%A5%2018-339933?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white">
+  <a href="LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/hyx805123/ups-web-json-monitor?style=flat-square&amp;label=license"></a>
+  <img alt="依赖数量" src="https://img.shields.io/badge/dependencies-0-brightgreen?style=flat-square">
+</p>
+
+单进程 · 零第三方依赖 · 已验证 30~40 台设备规模
 
 [项目简介](#项目简介) · [功能特性](#功能特性) · [系统架构](#系统架构) · [快速开始](#快速开始) · [REST API](#rest-api) · [版本演进](#版本演进)
 
@@ -185,6 +193,27 @@ PORT=9000 UPS_DATA_DIR=/var/lib/upsmon node upsmon/server.js
 
 ---
 
+## 开发与测试
+
+仓库内置两套零依赖检查，本地与 CI 使用同一入口：
+
+```bash
+npm test          # 静态检查 + 冒烟测试
+npm run check     # 仅静态检查
+npm run smoke     # 仅冒烟测试
+```
+
+| 命令 | 内容 |
+|---|---|
+| `node upsmon/tools/ci-check.js` | 对仓库内全部 `.js` 执行 `node --check`；编译 `index.html` 的内联脚本；校验 `<style>` 标签配平并拦截重复开标签 |
+| `node upsmon/tools/smoke.js` | 以临时 `UPS_DATA_DIR` 启动服务，验证 `/api/brand`、`/api/state`、`/api/history` 与静态首页后自动退出 |
+
+冒烟测试使用独立临时数据目录，不读取也不写入 `upsmon/data/`，不连接任何真实设备，可在离线环境运行。
+
+CI 配置见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)：静态检查覆盖 Node.js 18 / 20 / 22，冒烟测试额外在 Windows 运行一次，确认 `start.bat` 与路径处理无平台差异。
+
+---
+
 ## 目录结构
 
 ```
@@ -195,6 +224,7 @@ PORT=9000 UPS_DATA_DIR=/var/lib/upsmon node upsmon/server.js
 ├─ package.json
 ├─ LICENSE
 ├─ screenshots/              文档配图
+├─ .github/workflows/ci.yml  持续集成：静态检查与冒烟测试
 ├─ docs/
 │  ├─ AUTH-DESIGN.md         身份认证与权限管理设计（未上线）
 │  └─ CMDB-ROADMAP.md        功能扩展清单与工程遗留
@@ -202,7 +232,7 @@ PORT=9000 UPS_DATA_DIR=/var/lib/upsmon node upsmon/server.js
 │  ├─ server.js              HTTP 服务、采集调度、配置中心、告警、REST API
 │  ├─ lib/                   驱动、存储、告警、历史、归档等模块
 │  ├─ public/index.html      前端单文件应用
-│  ├─ tools/                 测试数据生成工具
+│  ├─ tools/                 ci-check.js 静态检查、smoke.js 冒烟测试、测试数据生成
 │  ├─ brand.local.json       本地版权信息（git 忽略，缺失则页脚隐藏）
 │  ├─ data/                  运行时数据（git 忽略，含凭据）
 │  └─ start.bat
