@@ -1,8 +1,8 @@
 # UPS 监控台 · 最简版（回退备用）
 
-这是**回退专用**的最小可用版本。完整版在同级目录 `../upsmon/`。
+这是用于回退的最小可用版本，完整版位于同级目录 `../upsmon/`。
 
-| | 完整版 `upsmon/` | 最简版 `upsmon-v1-minimal/` |
+| 能力 | 完整版 `upsmon/` | 最简版 `upsmon-v1-minimal/` |
 |---|---|---|
 | 采集 + 看板 | ✅ | ✅ |
 | 设备增删 | ✅ | ✅（仅增删，无编辑） |
@@ -20,9 +20,9 @@
 ## 怎么回退
 
 ```bat
-:: 1) 停掉完整版
-:: 2) 启动最简版
-cd /d "C:\Users\apps\Desktop\AI coding\UPS\upsmon-v1-minimal"
+:: 1) 停止完整版进程
+:: 2) 在项目根目录启动最简版
+cd /d "<项目根目录>\upsmon-v1-minimal"
 start.bat
 ```
 
