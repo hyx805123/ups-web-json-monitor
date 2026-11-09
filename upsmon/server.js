@@ -9,6 +9,8 @@ const { Settings } = require('./lib/settings');
 const { VertivITA2, tunnelMissing, identityOf, ENUM } = require('./lib/vertiv');
 const { AlertEngine } = require('./lib/alerts');
 const { HistoryStore } = require('./lib/history');
+const { Retention } = require('./lib/retention');
+const { Archive } = require('./lib/archive');
 const thresholds = require('./lib/thresholds');
 const grouping = require('./lib/grouping');
 
@@ -33,6 +35,26 @@ let HIST_OVERVIEW_CACHE = null; // 历史覆盖概览缓存（30 秒）
 
 const events = [];
 const runners = new Map();
+
+// 历史数据回收：按整天淘汰最旧分片，容量到 limitGB 才动手
+const retention = new Retention({
+  dir: path.join(DATA_DIR, 'history'),
+  getConfig: () => settings.retention(),
+  onEvent: (level, msg) => pushEvent(null, level, msg),
+  // 覆盖概览有 30 秒缓存，回收后要失效，否则界面还显示已删掉的日期
+  onPruned: () => { HIST_OVERVIEW_CACHE = null; }
+});
+
+// 历史数据归档：把保留窗口之外的日分片压成 .jsonl.gz，读取端透明兼容
+const archive = new Archive({
+  dir: path.join(DATA_DIR, 'history'),
+  getConfig: () => settings.archive(),
+  onEvent: (level, msg) => pushEvent(null, level, msg),
+  // 压缩前先落盘，避免刚写入的缓冲还在内存里就被压缩
+  beforeRun: () => { try { history.flushAll(); } catch (e) {} },
+  // 归档改变磁盘占用与覆盖概览的体积，两处缓存都要失效
+  onArchived: () => { HIST_OVERVIEW_CACHE = null; retention.invalidate(); }
+});
 
 function pushEvent(deviceId, level, msg) {
   const e = { ts: Date.now(), deviceId, level, msg };
@@ -688,9 +710,8 @@ const server = http.createServer(async (req, res) => {
         for (const d of store.list()) {
           const days = history.listDays(d.id);
           let bytes = 0;
-          for (const day of days) {
-            try { bytes += fs.statSync(path.join(DATA_DIR, 'history', d.id, day + '.jsonl')).size; } catch (e) {}
-          }
+          // 归档后是 .jsonl.gz，按实际文件统计，覆盖概览的体积才准
+          for (const day of days) bytes += history.dayBytes(d.id, day);
           items.push({
             id: d.id, name: d.name, model: d.model || '', site: d.site || '',
             days: days.length, firstDay: days[0] || null, lastDay: days[days.length - 1] || null,
@@ -929,6 +950,38 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // ---------- 历史数据回收 ----------
+    if (p === '/api/retention' && m === 'GET') {
+      return json(res, 200, retention.status());
+    }
+    if (p === '/api/retention' && m === 'PUT') {
+      const body = await readBody(req);
+      const cfg = settings.updateRetention(body || {});
+      retention.stop();
+      retention.start();               // 检查间隔可能被改，重建定时器
+      return json(res, 200, { config: cfg, status: retention.status() });
+    }
+    if (p === '/api/retention/run' && m === 'POST') {
+      const body = await readBody(req).catch(() => ({}));
+      return json(res, 200, retention.run({ dry: !!(body && body.dry) }));
+    }
+
+    // ---------- 历史数据归档 ----------
+    if (p === '/api/archive' && m === 'GET') {
+      return json(res, 200, archive.status());
+    }
+    if (p === '/api/archive' && m === 'PUT') {
+      const body = await readBody(req);
+      const cfg = settings.updateArchive(body || {});
+      archive.stop();
+      archive.start();                 // 检查间隔可能被改，重建定时器
+      return json(res, 200, { config: cfg, status: archive.status() });
+    }
+    if (p === '/api/archive/run' && m === 'POST') {
+      const body = await readBody(req).catch(() => ({}));
+      return json(res, 200, await archive.run({ dry: !!(body && body.dry) }));
+    }
+
     // ---------- 静态文件 ----------
     let rel = p === '/' ? '/index.html' : p;
     if (rel.includes('..')) return json(res, 400, { error: 'bad path' });
@@ -948,8 +1001,10 @@ const server = http.createServer(async (req, res) => {
 
 syncRunners();
 const flushTimer = setInterval(() => { try { history.flushAll(); } catch (e) {} }, 1000);
+try { retention.start(); } catch (e) { console.log('[retention] 定时器启动失败: ' + e.message); }
+try { archive.start(); } catch (e) { console.log('[archive] 定时器启动失败: ' + e.message); }
 function shutdown() {
-  try { clearInterval(flushTimer); history.flushAll(); } catch (e) {}
+  try { clearInterval(flushTimer); retention.stop(); archive.stop(); history.flushAll(); } catch (e) {}
   try { server.close(); } catch (e) {}
   process.exit(0);
 }

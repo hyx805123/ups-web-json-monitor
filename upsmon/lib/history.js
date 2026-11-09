@@ -1,8 +1,14 @@
 'use strict';
 // 历史数据持久化：采样点与告警事件全量落盘，按天分片 JSONL
 // 目录结构： data/history/<deviceId>/<YYYY-MM-DD>.jsonl
+//           归档后为 <YYYY-MM-DD>.jsonl.gz（内容与明文分片完全相同，只是压缩过）
+//           读取端两种都认：查询、统计、导出对外表现一致，调用方不需要关心是否归档。
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
+
+const DAY_GZ_RE = /^(\d{4}-\d{2}-\d{2})\.jsonl\.gz$/;
+const GZ_CACHE_MAX = 8;   // 解压后的日分片缓存条数（单个 1.8 MB 左右，8 条 ≈ 15 MB 上限）
 
 function dayKey(ts) {
   const d = new Date(ts);
@@ -82,6 +88,41 @@ class HistoryStore {
     this.buffers = new Map();   // deviceId -> {file, lines:[]}
     this.eventBuf = [];
     this.eventsFile = path.join(this.dir, 'events.jsonl');
+    this._gzCache = new Map();  // gz 文件路径 -> {mtimeMs, size, text}
+  }
+
+  // 归档分片解压（带小容量缓存，避免同一次查询里反复解压同一个文件）
+  _readGz(file) {
+    let st;
+    try { st = fs.statSync(file); } catch (e) { return null; }
+    const hit = this._gzCache.get(file);
+    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.text;
+    let text;
+    try { text = zlib.gunzipSync(fs.readFileSync(file)).toString('utf8'); }
+    catch (e) { return null; }     // 损坏的归档当缺失处理，不让整个查询报错
+    this._gzCache.set(file, { mtimeMs: st.mtimeMs, size: st.size, text });
+    if (this._gzCache.size > GZ_CACHE_MAX) {
+      const first = this._gzCache.keys().next().value;
+      this._gzCache.delete(first);
+    }
+    return text;
+  }
+
+  // 某天分片的实际文件路径：优先明文（正在写），其次归档
+  dayFile(deviceId, day) {
+    const dir = path.join(this.dir, deviceId);
+    const plain = path.join(dir, day + '.jsonl');
+    if (fs.existsSync(plain)) return plain;
+    const gz = plain + '.gz';
+    if (fs.existsSync(gz)) return gz;
+    return null;
+  }
+
+  // 某天分片在磁盘上的字节数（归档后是压缩后的大小）
+  dayBytes(deviceId, day) {
+    const f = this.dayFile(deviceId, day);
+    if (!f) return 0;
+    try { return fs.statSync(f).size; } catch (e) { return 0; }
   }
 
   _deviceDir(deviceId) {
@@ -130,10 +171,12 @@ class HistoryStore {
   listDays(deviceId, fromTs, toTs) {
     const dir = path.join(this.dir, deviceId);
     if (!fs.existsSync(dir)) return [];
-    let days = fs.readdirSync(dir)
-      .filter(f => f.endsWith('.jsonl'))
-      .map(f => f.replace('.jsonl', ''))
-      .sort();
+    const seen = new Set();
+    for (const f of fs.readdirSync(dir)) {
+      if (f.endsWith('.jsonl.gz')) { const m = DAY_GZ_RE.exec(f); if (m) seen.add(m[1]); }
+      else if (f.endsWith('.jsonl')) seen.add(f.slice(0, -6));
+    }
+    let days = Array.from(seen).sort();
     if (fromTs != null) {
       const from = dayKey(fromTs);
       days = days.filter(d => d >= from);
@@ -150,9 +193,15 @@ class HistoryStore {
   _scan(deviceId, fromTs, toTs, onPoint) {
     const days = this.listDays(deviceId, fromTs, toTs);
     for (const day of days) {
-      const file = path.join(this.dir, deviceId, day + '.jsonl');
+      const file = this.dayFile(deviceId, day);
+      if (!file) continue;
       let raw;
-      try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { continue; }
+      if (file.endsWith('.gz')) {
+        raw = this._readGz(file);
+        if (raw == null) continue;
+      } else {
+        try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { continue; }
+      }
       const lines = raw.split('\n');
       let over = 0;
       for (let i = 0; i < lines.length; i++) {
@@ -295,6 +344,9 @@ class HistoryStore {
         fs.rmdirSync(dir);
       }
     } catch (e) {}
+    for (const k of Array.from(this._gzCache.keys())) {
+      if (path.dirname(k) === dir) this._gzCache.delete(k);
+    }
     this.buffers.delete(deviceId);
   }
 }

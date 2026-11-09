@@ -105,6 +105,23 @@ function defaults() {
     },
     ui: { groupBy: 'none', viewMode: 'tiles', groupBySite: false, groupByModel: false, groupByStatus: false, compact: false, theme: 'dark' },
     thresholds: JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS)),
+    // 历史数据回收：到 limitGB 就从最旧一天开始删，回收到 targetPct% 或只剩 minKeepDays 天
+    // keepDays > 0 时改为按天数淘汰（容量条件仍生效，两条同时管）
+    retention: {
+      enabled: true,
+      limitGB: 60,
+      targetPct: 90,
+      minKeepDays: 7,
+      keepDays: 0,
+      checkEveryMin: 10
+    },
+    // 历史数据归档：超过 afterDays 天的日分片压成 .jsonl.gz，原文件校验一致后删除
+    archive: {
+      enabled: true,
+      afterDays: 3,
+      checkEveryMin: 60,
+      level: 6
+    },
     auth: { enabled: false, users: [], note: '身份认证与权限管理尚未启用，设计方案见 docs/AUTH-DESIGN.md' }
   };
 }
@@ -343,6 +360,52 @@ class Settings {
     }
     this.save();
     return this.data.thresholds;
+  }
+
+  // ---------- 历史回收 ----------
+  retention() { return this.data.retention; }
+
+  updateRetention(patch) {
+    const cur = this.data.retention;
+    const p = patch || {};
+    const num = (v, d, lo, hi, round) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return cur[d] !== undefined ? cur[d] : lo;
+      const x = Math.min(hi, Math.max(lo, n));
+      return round ? Math.round(x) : x;
+    };
+    this.data.retention = {
+      enabled: p.enabled === undefined ? cur.enabled !== false : !!p.enabled,
+      limitGB: num(p.limitGB, 'limitGB', 1, 100000),
+      targetPct: num(p.targetPct, 'targetPct', 10, 99),
+      minKeepDays: num(p.minKeepDays, 'minKeepDays', 1, 36500, true),
+      keepDays: num(p.keepDays, 'keepDays', 0, 36500, true),
+      checkEveryMin: num(p.checkEveryMin, 'checkEveryMin', 1, 1440, true)
+    };
+    this.save();
+    return this.data.retention;
+  }
+
+  // ---------- 历史归档压缩 ----------
+  archive() { return this.data.archive; }
+
+  updateArchive(patch) {
+    const cur = this.data.archive || {};
+    const p = patch || {};
+    const num = (v, key, lo, hi, round) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return cur[key] !== undefined ? cur[key] : lo;
+      const x = Math.min(hi, Math.max(lo, n));
+      return round ? Math.round(x) : x;
+    };
+    this.data.archive = {
+      enabled: p.enabled === undefined ? cur.enabled !== false : !!p.enabled,
+      afterDays: num(p.afterDays, 'afterDays', 1, 3650, true),
+      checkEveryMin: num(p.checkEveryMin, 'checkEveryMin', 5, 1440, true),
+      level: num(p.level, 'level', 1, 9, true)
+    };
+    this.save();
+    return this.data.archive;
   }
 
   // 分组删除时清理设备引用（需要访问设备表）

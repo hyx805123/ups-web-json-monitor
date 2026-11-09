@@ -735,6 +735,75 @@
         </div>
       </div>
     </div>
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3>历史数据回收</h3><span class="sp"></span>
+        <button class="btn sm" id="btnRetDry">预演</button>
+        <button class="btn sm" id="btnRetRun">立即回收</button>
+        <button class="btn primary sm" id="btnRetSave">保存配置</button></div>
+      <div class="sbody">
+        <div class="note-box" style="margin-bottom:16px">
+          历史按<b>天</b>分片存储。容量达到上限时，从<b>最旧一天</b>开始整天删除
+          （同一天所有设备的分片一起删，保证跨设备对比不缺边），直到降到目标水位或只剩「最少保留天数」。
+          <b>今天的分片永不删除。</b>
+        </div>
+        <div class="kv" style="margin-bottom:14px">
+          <div class="row"><div class="k">当前占用</div><div class="v" id="retSize">—</div></div>
+          <div class="row"><div class="k">容量上限</div><div class="v" id="retLimit">—</div></div>
+          <div class="row"><div class="k">占用比例</div><div class="v" id="retPct">—</div></div>
+          <div class="row"><div class="k">覆盖天数</div><div class="v" id="retDays">—</div></div>
+          <div class="row"><div class="k">最早 / 最新</div><div class="v" id="retRange">—</div></div>
+          <div class="row"><div class="k">上次回收</div><div class="v" id="retLast">—</div></div>
+        </div>
+        <div style="height:8px;border-radius:6px;background:var(--field-bg);border:1px solid var(--line);overflow:hidden;margin-bottom:16px">
+          <i id="retBar" style="display:block;height:100%;width:0;background:var(--ok-soft-1);transition:width .3s"></i>
+        </div>
+        <div class="row3">
+          <label class="f"><span class="lbl">容量上限（GB）</span><input class="f" type="number" min="1" step="1" id="retLimitGB"></label>
+          <label class="f"><span class="lbl">回收到（%）</span><input class="f" type="number" min="10" max="99" id="retTargetPct"></label>
+          <label class="f"><span class="lbl">最少保留（天）</span><input class="f" type="number" min="1" id="retMinKeep"></label>
+        </div>
+        <div class="row3">
+          <label class="f"><span class="lbl">按天数淘汰（0 = 关闭）</span><input class="f" type="number" min="0" id="retKeepDays"></label>
+          <label class="f"><span class="lbl">检查间隔（分钟）</span><input class="f" type="number" min="1" id="retEvery"></label>
+          <label class="f"><span class="lbl">启用自动回收</span>
+            <label class="switch"><input type="checkbox" id="retEnabled"><i></i></label></label>
+        </div>
+        <div class="hint" id="retPlan">—</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:16px">
+      <div class="pthead"><h3>历史数据归档压缩</h3><span class="sp"></span>
+        <button class="btn sm" id="btnArcDry">预演</button>
+        <button class="btn sm" id="btnArcRun">立即归档</button>
+        <button class="btn primary sm" id="btnArcSave">保存配置</button></div>
+      <div class="sbody">
+        <div class="note-box" style="margin-bottom:16px">
+          超过保留窗口的日分片会压成 <b>.jsonl.gz</b>，解压校验与原文逐字节一致后才删除原文件。
+          读取端两种格式都认，<b>历史查询、统计、CSV 导出的结果完全不变</b>；
+          <b>今天的分片永不压缩。</b>采样点 JSONL 的实测压缩比约 18:1。
+        </div>
+        <div class="kv" style="margin-bottom:14px">
+          <div class="row"><div class="k">已归档</div><div class="v" id="arcArchived">—</div></div>
+          <div class="row"><div class="k">原始 → 压缩后</div><div class="v" id="arcSize">—</div></div>
+          <div class="row"><div class="k">压缩比</div><div class="v" id="arcRatio">—</div></div>
+          <div class="row"><div class="k">已节省空间</div><div class="v" id="arcSaved">—</div></div>
+          <div class="row"><div class="k">待压缩</div><div class="v" id="arcPending">—</div></div>
+          <div class="row"><div class="k">保留明文至</div><div class="v" id="arcCutoff">—</div></div>
+          <div class="row"><div class="k">上次归档</div><div class="v" id="arcLast">—</div></div>
+        </div>
+        <div class="row3">
+          <label class="f"><span class="lbl">压缩超过（天）</span><input class="f" type="number" min="1" max="3650" id="arcAfterDays"></label>
+          <label class="f"><span class="lbl">检查间隔（分钟）</span><input class="f" type="number" min="5" id="arcEvery"></label>
+          <label class="f"><span class="lbl">压缩级别（1-9）</span><input class="f" type="number" min="1" max="9" id="arcLevel"></label>
+        </div>
+        <div class="row3">
+          <label class="f"><span class="lbl">启用自动归档</span>
+            <label class="switch"><input type="checkbox" id="arcEnabled"><i></i></label></label>
+          <div></div><div></div>
+        </div>
+        <div class="hint" id="arcPlan">—</div>
+      </div>
+    </div>
     <div class="panel">
       <div class="pthead"><h3>身份认证与权限管理</h3></div>
       <div class="sbody">
@@ -1883,7 +1952,141 @@ function renderSystem(){
   $("sysChannels").textContent=(SETTINGS.channels||[]).length;
   $("sysAuth").textContent = STATE.auth&&STATE.auth.enabled ? "已启用" : "未启用（见设计文档）";
   $("sysTime").textContent = dt(STATE.serverTime);
+  loadRetention();
+  loadArchive();
 }
+
+/* ---------------- 历史数据回收 ---------------- */
+let RET_STATUS=null;
+function retFill(id,val){
+  const el=$(id);
+  // 正在输入的框不覆盖，避免刷新把用户填的值冲掉
+  if(el && document.activeElement!==el) el.value=val;
+}
+async function loadRetention(){
+  let s=null;
+  try{ s=await api("/api/retention"); }catch(e){ return; }
+  RET_STATUS=s;
+  const u=s.usage,c=s.config,p=s.plan;
+  $("retSize").textContent=u.totalText;
+  $("retLimit").textContent=u.limitText;
+  $("retPct").textContent=u.percent+"%";
+  $("retDays").textContent=u.dayCount+" 天 · "+u.deviceCount+" 台设备";
+  $("retRange").textContent=(u.firstDay||"—")+" ~ "+(u.lastDay||"—");
+  $("retLast").textContent=s.last
+    ? dt(s.last.at)+" · 释放 "+s.last.freedText+" · 删除 "+s.last.removedDays+" 天"
+    : "尚未执行";
+  const bar=$("retBar");
+  bar.style.width=Math.min(100,u.percent)+"%";
+  bar.style.background=u.percent>=100?"var(--crit)":u.percent>=80?"var(--warn-soft)":"var(--ok-soft-1)";
+  retFill("retLimitGB",c.limitGB);
+  retFill("retTargetPct",c.targetPct);
+  retFill("retMinKeep",c.minKeepDays);
+  retFill("retKeepDays",c.keepDays);
+  retFill("retEvery",c.checkEveryMin);
+  if(document.activeElement!==$("retEnabled")) $("retEnabled").checked=!!c.enabled;
+  const parts=[];
+  if(!c.enabled) parts.push("自动回收已关闭（仍可手动执行）");
+  parts.push("每 "+c.checkEveryMin+" 分钟检查一次");
+  if(p.overLimit){
+    parts.push("已超过上限：下次将删除 "+p.willRemove.length+" 天（"+(p.willRemove[0]||"—")+" 起），预计释放 "+p.willFreeText);
+  }else{
+    parts.push("未超过上限，暂不回收；当前可删 "+p.removableDays+" 天");
+  }
+  if(c.keepDays>0) parts.push("按天数淘汰：保留最近 "+c.keepDays+" 天");
+  $("retPlan").textContent=parts.join("；");
+}
+$("btnRetSave").onclick=async()=>{
+  try{
+    await api("/api/retention",{method:"PUT",body:JSON.stringify({
+      enabled:$("retEnabled").checked,
+      limitGB:Number($("retLimitGB").value),
+      targetPct:Number($("retTargetPct").value),
+      minKeepDays:Number($("retMinKeep").value),
+      keepDays:Number($("retKeepDays").value),
+      checkEveryMin:Number($("retEvery").value)
+    })});
+    toast("回收配置已保存");
+    await loadRetention();
+  }catch(e){ toast("保存失败："+e.message); }
+};
+$("btnRetDry").onclick=async()=>{
+  try{
+    const r=await api("/api/retention/run",{method:"POST",body:JSON.stringify({dry:true})});
+    toast(r.skipped ? ("预演："+r.reason)
+      : ("预演：将删除 "+r.willRemove.length+" 天（"+r.willRemove[0]+" 起），释放 "+r.willFreeText));
+    await loadRetention();
+  }catch(e){ toast("预演失败："+e.message); }
+};
+$("btnRetRun").onclick=async()=>{
+  if(!confirm("确认立即回收？将从最旧一天开始删除历史分片，操作不可恢复。")) return;
+  try{
+    const r=await api("/api/retention/run",{method:"POST",body:"{}"});
+    toast(r.skipped ? ("未执行："+r.reason)
+      : ("已删除 "+r.removedDays+" 天，释放 "+r.freedText+"，当前 "+r.afterText));
+    await loadRetention();
+    refresh();
+  }catch(e){ toast("回收失败："+e.message); }
+};
+
+/* ---------------- 历史数据归档压缩 ---------------- */
+let ARC_STATUS=null;
+async function loadArchive(){
+  let s=null;
+  try{ s=await api("/api/archive"); }catch(e){ return; }
+  ARC_STATUS=s;
+  const u=s.usage,c=s.config;
+  $("arcArchived").textContent=u.archivedDays+" 天 · "+u.archivedFiles+" 个分片";
+  $("arcSize").textContent=u.archivedRawText+" → "+u.archivedText;
+  $("arcRatio").textContent=u.ratio?(u.ratio+":1"):"—";
+  $("arcSaved").textContent=u.savedText;
+  $("arcPending").textContent=u.pendingFiles+" 个 · "+u.pendingText+(u.earliestPending?("（"+u.earliestPending+" 起）"):"");
+  $("arcCutoff").textContent=u.cutoff;
+  $("arcLast").textContent=s.last
+    ? dt(s.last.at)+" · "+s.last.files+" 个分片 · 释放 "+s.last.freedText
+    : "尚未执行";
+  retFill("arcAfterDays",c.afterDays);
+  retFill("arcEvery",c.checkEveryMin);
+  retFill("arcLevel",c.level);
+  if(document.activeElement!==$("arcEnabled")) $("arcEnabled").checked=!!c.enabled;
+  const parts=[];
+  if(!c.enabled) parts.push("自动归档已关闭（仍可手动执行）");
+  parts.push("每 "+c.checkEveryMin+" 分钟检查一次");
+  parts.push("超过 "+c.afterDays+" 天的分片保持为 .jsonl.gz");
+  if(u.pendingFiles) parts.push("当前有 "+u.pendingFiles+" 个分片（"+u.pendingText+"）待压缩");
+  else parts.push("当前没有待压缩的分片");
+  $("arcPlan").textContent=parts.join("；");
+}
+$("btnArcSave").onclick=async()=>{
+  try{
+    await api("/api/archive",{method:"PUT",body:JSON.stringify({
+      enabled:$("arcEnabled").checked,
+      afterDays:Number($("arcAfterDays").value),
+      checkEveryMin:Number($("arcEvery").value),
+      level:Number($("arcLevel").value)
+    })});
+    toast("归档配置已保存");
+    await loadArchive();
+  }catch(e){ toast("保存失败："+e.message); }
+};
+$("btnArcDry").onclick=async()=>{
+  try{
+    const r=await api("/api/archive/run",{method:"POST",body:JSON.stringify({dry:true})});
+    toast(r.skipped ? ("预演："+r.reason)
+      : ("预演：将压缩 "+r.files+" 个分片（"+r.days+" 天），原始 "+r.bytesText));
+    await loadArchive();
+  }catch(e){ toast("预演失败："+e.message); }
+};
+$("btnArcRun").onclick=async()=>{
+  if(!confirm("确认立即归档？将对保留窗口之外的明文分片执行压缩，压缩校验通过后删除原文件。")) return;
+  try{
+    const r=await api("/api/archive/run",{method:"POST",body:"{}"});
+    toast(r.skipped ? ("未执行："+r.reason)
+      : ("已压缩 "+r.files+" 个分片，" + r.rawText + " → " + r.gzText + "，释放 "+r.freedText));
+    await loadArchive();
+    loadRetention();
+  }catch(e){ toast("归档失败："+e.message); }
+};
 
 /* ---------------- 设备表单 ---------------- */
 function openDeviceForm(id){
