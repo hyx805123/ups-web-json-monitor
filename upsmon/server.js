@@ -23,7 +23,9 @@ settings.devices = store.list();
 const alertEngine = new AlertEngine(settings);
 const history = new HistoryStore(path.join(DATA_DIR, 'history'));
 
-const HISTORY_MAX = 3600;      // 内存环形缓冲：10s 间隔下约 1 小时（完整历史在磁盘）
+const HISTORY_MAX = 3600;      // 内存环形缓冲：10s 间隔下约 10 小时（完整历史在磁盘）
+// 三相机型额外落盘的分相字段；单相机型不写，降采样时按这个列表逐桶平均
+const PHASE_KEYS = ['vInA', 'vInB', 'vInC', 'vOutA', 'vOutB', 'vOutC', 'iOutA', 'iOutB', 'iOutC'];
 const SPARK_POINTS = 120;      // 随 /api/state 下发的趋势点数
 const EVENTS_MAX = 400;
 const DETAIL_EVERY = 3;        // 每 3 个周期拉一次明细接口 ≈ 30s
@@ -246,7 +248,7 @@ class Runner {
 
   record(snap, detail) {
     const h = this.history;
-    h.push({
+    const point = {
       ts: snap.ts,
       supply: snap.supply.code,
       vOut: pick(snap.output.v),
@@ -265,7 +267,21 @@ class Runner {
       battTemp: snap.battery.tempC,
       alarms: snap.alarms.count,
       faults: snap.alarms.faults
-    });
+    };
+    // 上面的 vOut / iOut / vIn 走 pick()，口径是"取 A 相"，B/C 相会丢。
+    // 三相机型另外把三相分别落盘，历史才能画出三条线；单相机型不写，
+    // 免得每点白占 9 个字段的体积。
+    if (snap.phases >= 3) {
+      const put = (prefix, tr) => {
+        point[prefix + 'A'] = tr ? tr.a : null;
+        point[prefix + 'B'] = tr ? tr.b : null;
+        point[prefix + 'C'] = tr ? tr.c : null;
+      };
+      put('vIn', snap.input.v);
+      put('vOut', snap.output.v);
+      put('iOut', snap.output.i);
+    }
+    h.push(point);
     if (h.length > HISTORY_MAX) h.splice(0, h.length - HISTORY_MAX);
     // 完整历史落盘，永久保留
     try { history.append(this.dev.id, h[h.length - 1]); } catch (e) {}
@@ -735,7 +751,11 @@ const server = http.createServer(async (req, res) => {
         };
         const head = ['时间', '供电状态', '输入电压V', '输出电压V', '输出电流A', '输出频率Hz',
           '有功功率kW', '视在功率kVA', '负载率%', '电池容量%', '电池电压V', '电池电流A',
-          '电池状态', '备电时长min', '环境温度℃', '电池温度℃', '告警数', '故障数'];
+          '电池状态', '备电时长min', '环境温度℃', '电池温度℃', '告警数', '故障数',
+          // 三相机型的相明细追加在最后 9 列，前 18 列顺序不变，旧的表格模板不用改
+          '输入电压A相(V)', '输入电压B相(V)', '输入电压C相(V)',
+          '输出电压A相(V)', '输出电压B相(V)', '输出电压C相(V)',
+          '输出电流A相(A)', '输出电流B相(A)', '输出电流C相(A)'];
         const cell = (v) => {
           if (v === null || v === undefined) return '';
           const s = String(v);
@@ -749,7 +769,8 @@ const server = http.createServer(async (req, res) => {
             o.vIn, o.vOut, o.iOut, o.fOut, o.kw, o.kva, o.loadPct,
             o.battCap, o.battV, o.battI,
             (ENUM.battery[o.battState] || o.battState || ''),
-            o.backupMin, o.envTemp, o.battTemp, o.alarms, o.faults
+            o.backupMin, o.envTemp, o.battTemp, o.alarms, o.faults,
+            o.vInA, o.vInB, o.vInC, o.vOutA, o.vOutB, o.vOutC, o.iOutA, o.iOutB, o.iOutC
           ].map(cell).join(','));
         }
         // BOM：让 Excel 直接按 UTF-8 打开，中文表头不乱码
@@ -798,13 +819,16 @@ const server = http.createServer(async (req, res) => {
             if (!vals.length) return null;
             return vals.reduce((x, y) => x + Number(y), 0) / vals.length;
           };
-          out.push(Object.assign({}, sl[sl.length - 1], {
+          const rec = Object.assign({}, sl[sl.length - 1], {
             ts: sl[Math.floor(sl.length / 2)].ts,
             vOut: avg('vOut'), vIn: avg('vIn'), iOut: avg('iOut'), fOut: avg('fOut'),
             kw: avg('kw'), kva: avg('kva'), loadPct: avg('loadPct'),
             battCap: avg('battCap'), battV: avg('battV'), battI: avg('battI'),
             backupMin: avg('backupMin'), envTemp: avg('envTemp'), battTemp: avg('battTemp')
-          }));
+          });
+          // 分相字段同样要按桶取平均，否则降采样后三相曲线会退化成"桶内最后一条"
+          for (const k of PHASE_KEYS) if (sl[0][k] !== undefined) rec[k] = avg(k);
+          out.push(rec);
         }
         rows = out;
       }

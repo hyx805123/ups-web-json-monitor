@@ -586,7 +586,10 @@
         <div class="chips" id="histMetrics">
           <div class="chip on" data-k="loadPct">负载率 %</div>
           <div class="chip" data-k="vOut">输出电压 V</div>
+          <div class="chip" data-k="vOut3">输出电压 · 三相</div>
+          <div class="chip" data-k="iOut3">输出电流 · 三相</div>
           <div class="chip" data-k="vIn">输入电压 V</div>
+          <div class="chip" data-k="vIn3">输入电压 · 三相</div>
           <div class="chip" data-k="kw">有功功率 kW</div>
           <div class="chip" data-k="battCap">电池容量 %</div>
           <div class="chip" data-k="battV">电池电压 V</div>
@@ -599,7 +602,7 @@
     <div class="panel" style="margin-bottom:16px">
       <div class="pthead"><h3 id="histChartTitle">趋势曲线</h3><span class="sp"></span>
         <div class="hlegend">
-          <span><i style="background:var(--accent)"></i><span id="histLegend">负载率</span></span>
+          <span id="histLegend"></span>
           <span id="histChartInfo" style="color:var(--dim)"></span>
         </div>
       </div>
@@ -2530,10 +2533,18 @@ function renderFilters(){
 }
 
 /* ---------------- 历史查询 ---------------- */
+// 三相曲线配色：A/B/C 用 强调蓝 / 暖橙 / 柔绿，两套主题里都有对应变量且互相区分得开
+const PHASE_COLORS = ["var(--accent)", "var(--warn-soft)", "var(--ok-soft-1)"];
+function phaseSeries(prefix){
+  return ["A","B","C"].map((p,i)=>({key:prefix+p, name:p+" 相", color:PHASE_COLORS[i]}));
+}
 const HIST_METRICS = {
   loadPct:  {label:"负载率",   unit:"%",  digits:1},
   vOut:     {label:"输出电压", unit:"V",  digits:1},
+  vOut3:    {label:"输出电压 · 三相", unit:"V", digits:1, series:phaseSeries("vOut")},
+  iOut3:    {label:"输出电流 · 三相", unit:"A", digits:2, series:phaseSeries("iOut")},
   vIn:      {label:"输入电压", unit:"V",  digits:1},
+  vIn3:     {label:"输入电压 · 三相", unit:"V", digits:1, series:phaseSeries("vIn")},
   kw:       {label:"有功功率", unit:"kW", digits:2},
   battCap:  {label:"电池容量", unit:"%",  digits:1},
   battV:    {label:"电池电压", unit:"V",  digits:1},
@@ -2668,17 +2679,31 @@ function histPaint(){
 function histPaintChart(){
   const box=$("histChart");
   const meta=HIST_METRICS[HIST.metric]||HIST_METRICS.loadPct;
-  $("histLegend").textContent=meta.label;
+  const series=meta.series||[{key:HIST.metric, name:meta.label, color:"var(--accent)"}];
+  $("histLegend").innerHTML=series.map(s=>
+    '<span><i style="background:'+s.color+'"></i>'+esc(s.name)+'</span>').join("");
   $("histChartTitle").textContent="趋势曲线 · "+meta.label+"（"+meta.unit+"）";
 
   const rows=(HIST.data&&HIST.data.history)||[];
-  const pts=rows.map(o=>({ts:o.ts, v:o[HIST.metric]}))
-    .filter(p=>p.v!==null&&p.v!==undefined&&p.v!=="")
-    .sort((a,b)=>a.ts-b.ts);
+  // 一条曲线的字段是 meta.key，三相是三组字段；统一转成"每点带多列"的结构，
+  // 某相缺值就留 null，后面的折线按 null 断开，不会把断点连成直线。
+  const pts=rows.map(o=>{
+    const rec={ts:o.ts};
+    let any=false;
+    for(const s of series){
+      const raw=o[s.key];
+      const n=(raw===null||raw===undefined||raw==="")?null:Number(raw);
+      rec[s.key]=(n!==null&&isFinite(n))?n:null;
+      if(rec[s.key]!==null) any=true;
+    }
+    return any?rec:null;
+  }).filter(Boolean).sort((a,b)=>a.ts-b.ts);
 
   if(pts.length<2){
-    box.innerHTML='<div class="hempty"><div>该时段没有可绘制的采样点</div>'+
-      '<div style="font-size:12px">换一个时间范围或换个指标试试</div></div>';
+    box.innerHTML='<div class="hempty"><div>'+(meta.series?"该时段没有分相记录":"该时段没有可绘制的采样点")+'</div>'+
+      '<div style="font-size:12px">'+(meta.series
+        ?"分相数据从本版本部署之后才开始记录，更早的历史只有单相口径的汇总值"
+        :"换一个时间范围或换个指标试试")+'</div></div>';
     $("histChartInfo").textContent="";
     return;
   }
@@ -2689,7 +2714,9 @@ function histPaintChart(){
   const plotW=W-pad.l-pad.r, plotH=H-pad.t-pad.b;
   const t0=pts[0].ts, t1=pts[pts.length-1].ts, spanX=Math.max(1,t1-t0);
 
-  const vals=pts.map(p=>p.v);
+  // 纵轴范围要覆盖所有系列，否则三条线里有一条会被裁掉
+  const vals=[];
+  for(const p of pts) for(const s of series) if(p[s.key]!==null) vals.push(p[s.key]);
   let vmin=Math.min.apply(null,vals), vmax=Math.max.apply(null,vals);
   if(vmax-vmin<1e-9){ vmax+=1; vmin-=1; }
   const padv=(vmax-vmin)*0.12; vmin-=padv; vmax+=padv;
@@ -2714,11 +2741,23 @@ function histPaintChart(){
       histTick(ts,spanX)+'</text>';
   }
 
-  let line="", area="";
-  for(let i=0;i<pts.length;i++){
-    line+=(i?" L":"M")+r2(X(pts[i].ts))+" "+r2(Y(pts[i].v));
-  }
-  area=line+" L"+r2(X(t1))+" "+r2(pad.t+plotH)+" L"+r2(X(t0))+" "+r2(pad.t+plotH)+" Z";
+  // 每条系列单独成一条路径；遇到 null 用 M 重新起笔，缺采或某相缺值处自然断开
+  const lines=series.map(s=>{
+    let d="", on=false;
+    for(const p of pts){
+      const v=p[s.key];
+      if(v===null){ on=false; continue; }
+      d+=(on?" L":" M")+r2(X(p.ts))+" "+r2(Y(v));
+      on=true;
+    }
+    return {d:d, color:s.color};
+  });
+  // 面积只在单系列且整段无断点时画，多系列叠面积会糊成一片
+  const onlyKey=series.length===1?series[0].key:null;
+  const continuous=onlyKey&&pts.every(p=>p[onlyKey]!==null);
+  const area=continuous
+    ? lines[0].d+" L"+r2(X(t1))+" "+r2(pad.t+plotH)+" L"+r2(X(t0))+" "+r2(pad.t+plotH)+" Z"
+    : "";
 
   box.innerHTML=
     '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+
@@ -2727,18 +2766,19 @@ function histPaintChart(){
         '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/>'+
       '</linearGradient></defs>'+
       grid+axis+
-      '<path d="'+area+'" fill="url(#histGrad)" stroke="none"/>'+
-      '<path d="'+line+'" fill="none" stroke="var(--accent)" stroke-width="1.6" '+
-        'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'+
+      (area?'<path d="'+area+'" fill="url(#histGrad)" stroke="none"/>':'')+
+      lines.map(l=>l.d?'<path d="'+l.d+'" fill="none" stroke="'+l.color+'" stroke-width="1.6" '+
+        'stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>':'').join("")+
       '<line class="hline" x1="0" y1="'+pad.t+'" x2="0" y2="'+r2(pad.t+plotH)+'" style="display:none"/>'+
-      '<circle class="hdot" r="3.5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5" style="display:none"/>'+
+      series.map((s,i)=>'<circle class="hdot" data-s="'+i+'" r="3.5" fill="'+s.color+'" '+
+        'stroke="var(--panel)" stroke-width="1.5" style="display:none"/>').join("")+
       '<rect class="hhit" x="'+pad.l+'" y="'+pad.t+'" width="'+r2(plotW)+'" height="'+r2(plotH)+'" fill="transparent"/>'+
     '</svg><div class="htip"></div>';
 
   const svg=box.querySelector("svg");
   const tip=box.querySelector(".htip");
   const hline=box.querySelector(".hline");
-  const hdot=box.querySelector(".hdot");
+  const dots=[].slice.call(box.querySelectorAll(".hdot"));
   const hit=box.querySelector(".hhit");
 
   hit.addEventListener("mousemove", ev=>{
@@ -2747,11 +2787,22 @@ function histPaintChart(){
     const sx=(ev.clientX-rect.left)*(W/rect.width);
     let i=Math.round((sx-pad.l)/plotW*(pts.length-1));
     i=Math.max(0,Math.min(pts.length-1,i));
-    const p=pts[i], x=r2(X(p.ts)), y=r2(Y(p.v));
+    const p=pts[i], x=r2(X(p.ts));
     hline.setAttribute("x1",x); hline.setAttribute("x2",x); hline.style.display="";
-    hdot.setAttribute("cx",x); hdot.setAttribute("cy",y); hdot.style.display="";
-    tip.innerHTML='<span class="tt">'+dt(p.ts)+'</span>'+
-      '<span class="tv">'+fmt(p.v,meta.digits)+' <span style="font-size:10.5px;color:var(--muted)">'+meta.unit+'</span></span>';
+    let rowsHtml='<span class="tt">'+dt(p.ts)+'</span>';
+    series.forEach((s,si)=>{
+      const v=p[s.key], dot=dots[si];
+      if(v===null){ if(dot) dot.style.display="none"; return; }
+      if(dot){ dot.setAttribute("cx",x); dot.setAttribute("cy",r2(Y(v))); dot.style.display=""; }
+      const mark=series.length>1
+        ?'<i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+
+          s.color+';margin-right:5px;vertical-align:middle"></i>'+esc(s.name)+' '
+        :'';
+      rowsHtml+='<span class="tv" style="display:block'+(series.length>1?';font-size:12px':'')+'">'+
+        mark+fmt(v,meta.digits)+
+        ' <span style="font-size:10.5px;color:var(--muted)">'+meta.unit+'</span></span>';
+    });
+    tip.innerHTML=rowsHtml;
     tip.style.display="block";
     const boxRect=box.getBoundingClientRect();
     const px=(x/W)*rect.width+(rect.left-boxRect.left);
@@ -2761,7 +2812,9 @@ function histPaintChart(){
     tip.style.top=Math.max(4,(ev.clientY-boxRect.top)-tip.offsetHeight-10)+"px";
   });
   hit.addEventListener("mouseleave", ()=>{
-    hline.style.display="none"; hdot.style.display="none"; tip.style.display="none";
+    hline.style.display="none";
+    dots.forEach(d=>d.style.display="none");
+    tip.style.display="none";
   });
 
   const d=HIST.data||{};

@@ -10,6 +10,10 @@ function dayKey(ts) {
   return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
 }
 
+// 三相机型额外落盘的分相字段（单相机型不写）。降采样时要逐桶平均，
+// 否则分相曲线会退化成"桶内第一条/最后一条"，尖峰被抹平。
+const PHASE_KEYS = ['vInA', 'vInB', 'vInC', 'vOutA', 'vOutB', 'vOutC', 'iOutA', 'iOutB', 'iOutC'];
+
 // 统计口径：区间内的极值 / 均值 / 放电次数与时长
 const STAT_METRICS = ['vOut', 'vIn', 'iOut', 'fOut', 'kw', 'kva', 'loadPct',
   'battCap', 'battV', 'battI', 'backupMin', 'envTemp', 'battTemp'];
@@ -189,7 +193,7 @@ class HistoryStore {
         if (!vals.length) return null;
         return vals.reduce((x, y) => x + Number(y), 0) / vals.length;
       };
-      out.push(Object.assign({}, slice[0], {
+      const rec = Object.assign({}, slice[0], {
         ts: slice[Math.floor(slice.length / 2)].ts,
         vOut: avg('vOut'), vIn: avg('vIn'), iOut: avg('iOut'), fOut: avg('fOut'),
         kw: avg('kw'), kva: avg('kva'), loadPct: avg('loadPct'),
@@ -197,7 +201,9 @@ class HistoryStore {
         battState: slice[slice.length - 1].battState,
         backupMin: avg('backupMin'), envTemp: avg('envTemp'), battTemp: avg('battTemp'),
         alarms: slice[slice.length - 1].alarms, faults: slice[slice.length - 1].faults
-      }));
+      });
+      for (const k of PHASE_KEYS) if (slice[0][k] !== undefined) rec[k] = avg(k);
+      out.push(rec);
     }
     return out;
   }
