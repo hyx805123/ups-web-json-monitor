@@ -41,6 +41,8 @@ class Store {
     if (d.commissionDate === undefined) d.commissionDate = '';
     if (d.serial === undefined) d.serial = '';
     if (d.note === undefined) d.note = '';
+    // 相数（1/3）由采集时自报后落盘，用于前端判断是否展示三相指标；未知为 null
+    if (d.phases === undefined) d.phases = null;
   }
 
   save() {

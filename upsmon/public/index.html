@@ -2807,6 +2807,34 @@ function histTick(ts, span){
   return hpad(d.getMonth()+1)+"-"+hpad(d.getDate());
 }
 
+// 三相指标只对三相机型有意义：单相设备把这三颗 chip 整体隐藏，
+// 免得用户点了以后看到三条全空的曲线，误以为历史丢了。
+const PHASE_METRICS=["vOut3","iOut3","vIn3"];
+function histDevPhases(){
+  const d=(STATE.devices||[]).find(x=>x.cfg.id===HIST.devId);
+  if(!d) return 0;
+  // 在线时以实时快照为准；离线或刚重启时用落盘的相数（采集到一次就会记住）
+  const p=Number((d.snap&&d.snap.phases)||d.cfg.phases||0);
+  return Number.isFinite(p)?p:0;
+}
+function histSyncPhaseChips(){
+  const box=$("histMetrics");
+  if(!box) return;
+  const three=histDevPhases()>=3;
+  let needReset=false;
+  box.querySelectorAll(".chip[data-k]").forEach(c=>{
+    if(PHASE_METRICS.indexOf(c.dataset.k)<0) return;
+    c.style.display=three?"":"none";
+    if(!three&&c.classList.contains("on")) needReset=true;
+  });
+  if(needReset){
+    // 从三相设备切到单相设备时，指标要退回默认的负载率，否则会画一条空曲线
+    HIST.metric="loadPct";
+    box.querySelectorAll(".chip").forEach(x=>x.classList.toggle("on", x.dataset.k==="loadPct"));
+    if(HIST.data) histPaintChart();
+  }
+}
+
 async function histFillDevices(){
   const sel=$("histDev");
   const list=(STATE.devices||[]).map(d=>({id:d.cfg.id, name:d.cfg.name||d.cfg.host, host:d.cfg.host}));
@@ -2830,6 +2858,7 @@ async function histFillDevices(){
   $("histCoverage").textContent = ov
     ? ("已有数据 "+ov.days+" 天（"+(ov.firstDay||"—")+" ~ "+(ov.lastDay||"—")+"，"+histBytes(ov.bytes)+"）")
     : "";
+  histSyncPhaseChips();
 }
 
 async function renderHistory(){
@@ -3124,7 +3153,7 @@ $("histMetrics").addEventListener("click", e=>{
   HIST.metric=c.dataset.k;
   if(HIST.data) histPaintChart();
 });
-$("histDev").onchange=()=>{ HIST.data=null; histQuery(); };
+$("histDev").onchange=()=>{ HIST.data=null; HIST.devId=$("histDev").value||null; histSyncPhaseChips(); histQuery(); };
 $("histPoints").onchange=()=>{ histQuery(); };
 $("histQuery").onclick=()=>histQuery();
 $("histExport").onclick=()=>histExportCsv();

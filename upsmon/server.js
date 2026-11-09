@@ -197,6 +197,12 @@ class Runner {
       applyThresholds(snap);
       const wasDown = this.status === 'offline' || this.status === 'degraded' || this.status === 'starting';
       this.snap = snap;
+      // 相数是机型固有属性：落一次盘，离线或重启后前端仍能判断该不该显示三相指标
+      const ph = Number(snap.phases) || 0;
+      if (ph && this.dev.phases !== ph) {
+        this.dev.phases = ph;
+        try { store.save(); } catch (e) { /* 写盘失败不影响采集 */ }
+      }
       this.status = 'online';
       this.error = null;
       this.lastErrorCode = null;
